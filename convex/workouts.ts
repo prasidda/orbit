@@ -1,0 +1,140 @@
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import { Doc, Id } from "./_generated/dataModel";
+import { requireUser, Ctx } from "./lib/auth";
+
+async function withSets(ctx: Ctx, workout: Doc<"workouts">) {
+  const sets = await ctx.db
+    .query("workoutSets")
+    .withIndex("by_workout", (q) => q.eq("workoutId", workout._id))
+    .collect();
+  return {
+    ...workout,
+    sets: sets.sort((a, b) => a.order - b.order),
+    volume: sets.reduce((sum, s) => sum + s.reps * s.weight, 0),
+  };
+}
+
+export const day = query({
+  args: { date: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_date", (q) => q.eq("userId", me._id).eq("date", args.date))
+      .collect();
+    return await Promise.all(rows.map((w) => withSets(ctx, w)));
+  },
+});
+
+export const history = query({
+  args: { from: v.string(), to: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_date", (q) =>
+        q.eq("userId", me._id).gte("date", args.from).lte("date", args.to)
+      )
+      .collect();
+    const hydrated = await Promise.all(rows.map((w) => withSets(ctx, w)));
+    return hydrated.sort((a, b) => b.date.localeCompare(a.date));
+  },
+});
+
+/** Exercises you've logged before, most-used first — feeds the autocomplete. */
+export const exercises = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireUser(ctx);
+    const sets = await ctx.db
+      .query("workoutSets")
+      .withIndex("by_user_exercise", (q) => q.eq("userId", me._id))
+      .collect();
+
+    const counts = new Map<string, number>();
+    for (const set of sets) counts.set(set.exercise, (counts.get(set.exercise) ?? 0) + 1);
+
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 40)
+      .map(([exercise]) => exercise);
+  },
+});
+
+export const create = mutation({
+  args: { date: v.string(), name: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const name = args.name.trim();
+    if (!name) throw new Error("Give the session a name");
+    return await ctx.db.insert("workouts", { userId: me._id, date: args.date, name });
+  },
+});
+
+export const rename = mutation({
+  args: { workoutId: v.id("workouts"), name: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const workout = await ctx.db.get(args.workoutId);
+    if (!workout || workout.userId !== me._id) throw new Error("Not found");
+    await ctx.db.patch(workout._id, { name: args.name.trim() || workout.name });
+  },
+});
+
+export const remove = mutation({
+  args: { workoutId: v.id("workouts") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const workout = await ctx.db.get(args.workoutId);
+    if (!workout || workout.userId !== me._id) throw new Error("Not found");
+
+    // Sets are children of the session, so they go with it.
+    const sets = await ctx.db
+      .query("workoutSets")
+      .withIndex("by_workout", (q) => q.eq("workoutId", workout._id))
+      .collect();
+    for (const set of sets) await ctx.db.delete(set._id);
+    await ctx.db.delete(workout._id);
+  },
+});
+
+export const addSet = mutation({
+  args: {
+    workoutId: v.id("workouts"),
+    exercise: v.string(),
+    reps: v.number(),
+    weight: v.number(),
+    unit: v.union(v.literal("kg"), v.literal("lb")),
+  },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const workout = await ctx.db.get(args.workoutId);
+    if (!workout || workout.userId !== me._id) throw new Error("Not found");
+
+    const existing = await ctx.db
+      .query("workoutSets")
+      .withIndex("by_workout", (q) => q.eq("workoutId", workout._id))
+      .collect();
+
+    return await ctx.db.insert("workoutSets", {
+      userId: me._id,
+      workoutId: workout._id,
+      exercise: args.exercise.trim(),
+      reps: Math.max(1, Math.round(args.reps)),
+      weight: Math.max(0, args.weight),
+      unit: args.unit,
+      order: existing.length,
+    });
+  },
+});
+
+export const removeSet = mutation({
+  args: { setId: v.id("workoutSets") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const set = await ctx.db.get(args.setId);
+    if (!set || set.userId !== me._id) throw new Error("Not found");
+    await ctx.db.delete(set._id);
+  },
+});

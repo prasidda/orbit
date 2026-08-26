@@ -1,26 +1,197 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------
+   Organic design system
+   Cream ground, terracotta accent, sage support. Warm ink by night —
+   never grey. Every color is a token; nothing hardcodes a hex.
+------------------------------------------------------------------ */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ground */
+  --ground: #f3eee5;
+  --surface: #fdfbf6;
+  --surface-sunk: #ebe4d6;
+  --rail: #ece3d2;
+
+  /* ink */
+  --ink: #2b2622;
+  --ink-muted: #857a6e;
+  --ink-faint: #a99d8e;
+
+  /* line */
+  --line: #e3dac8;
+  --line-strong: #d5c9b2;
+
+  /* accents */
+  --terracotta: #c0693e;
+  --terracotta-hover: #ab5c35;
+  --terracotta-soft: #f0d9c9;
+  --terracotta-ink: #7d3f22;
+
+  --sage: #7c9a6d;
+  --sage-soft: #dce5d3;
+  --sage-ink: #46603a;
+
+  --clay: #6b4a32;
+  --honey: #bf9a5f;
+  --honey-soft: #f2e3c6;
+
+  /* tool identity */
+  --tool-water: #6f9e8e;
+  --tool-workouts: #c0693e;
+  --tool-classwork: #6b4a32;
+  --tool-calendar: #bf9a5f;
+
+  /* feedback */
+  --danger: #b4462f;
+  --danger-soft: #f5d9d1;
+
+  --shadow-card: 0 1px 2px rgb(43 38 34 / 0.04), 0 8px 24px -12px rgb(43 38 34 / 0.10);
+  --shadow-pop: 0 4px 12px rgb(43 38 34 / 0.08), 0 24px 48px -20px rgb(43 38 34 / 0.22);
+}
+
+.dark {
+  --ground: #191512;
+  --surface: #241f1a;
+  --surface-sunk: #16120f;
+  --rail: #1f1a16;
+
+  --ink: #f3eee5;
+  --ink-muted: #a99d8e;
+  --ink-faint: #7d7367;
+
+  --line: #383029;
+  --line-strong: #4b4137;
+
+  --terracotta: #d9825a;
+  --terracotta-hover: #e5926b;
+  --terracotta-soft: #46281a;
+  --terracotta-ink: #f0c3aa;
+
+  --sage: #9dbb8c;
+  --sage-soft: #2c3826;
+  --sage-ink: #cadec0;
+
+  --clay: #b08a6b;
+  --honey: #d4b478;
+  --honey-soft: #3b3020;
+
+  --tool-water: #8ec0ae;
+  --tool-workouts: #d9825a;
+  --tool-classwork: #b08a6b;
+  --tool-calendar: #d4b478;
+
+  --danger: #e08267;
+  --danger-soft: #47251c;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.30), 0 8px 24px -12px rgb(0 0 0 / 0.55);
+  --shadow-pop: 0 4px 12px rgb(0 0 0 / 0.35), 0 24px 48px -20px rgb(0 0 0 / 0.65);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-rail: var(--rail);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-terracotta: var(--terracotta);
+  --color-terracotta-hover: var(--terracotta-hover);
+  --color-terracotta-soft: var(--terracotta-soft);
+  --color-terracotta-ink: var(--terracotta-ink);
+
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-sage-ink: var(--sage-ink);
+
+  --color-clay: var(--clay);
+  --color-honey: var(--honey);
+  --color-honey-soft: var(--honey-soft);
+
+  --color-water: var(--tool-water);
+  --color-workouts: var(--tool-workouts);
+  --color-classwork: var(--tool-classwork);
+  --color-calendar: var(--tool-calendar);
+
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --font-display: var(--font-caprasimo), Georgia, serif;
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 1.25rem;
+  --radius-tile: 1rem;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv01";
+  }
+
+  /* Display type is Caprasimo — heavy, warm, always a little oversized. */
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: var(--terracotta-soft);
+    color: var(--terracotta-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--terracotta);
+    outline-offset: 2px;
+  }
+
+  /* Section labels: small, tracked-out, muted. Used above every card. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
