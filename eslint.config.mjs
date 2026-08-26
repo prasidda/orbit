@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Convex writes these; they are not ours to lint.
+    "convex/_generated/**",
   ]),
 ]);
 

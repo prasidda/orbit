@@ -1,18 +1,22 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
+import type { OptimisticLocalStore } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 /**
- * Water logging with an optimistic update, so the ring moves on the same
- * frame as the tap instead of waiting for the round trip.
+ * The optimistic updaters are built at module scope on purpose. They run when
+ * the mutation fires, not during render, and defining them outside the hook
+ * keeps `Date.now()` out of the render path.
  */
-export function useLogWater(myId: Id<"users"> | undefined) {
-  return useMutation(api.water.log).withOptimisticUpdate((localStore, args) => {
+const optimisticLog =
+  (myId: Id<"users"> | undefined) =>
+  (localStore: OptimisticLocalStore, args: { date: string; amountMl: number }) => {
     const current = localStore.getQuery(api.water.day, { date: args.date });
     if (!current || !myId) return;
 
+    const now = Date.now();
     localStore.setQuery(
       api.water.day,
       { date: args.date },
@@ -22,17 +26,24 @@ export function useLogWater(myId: Id<"users"> | undefined) {
         logs: [
           {
             _id: crypto.randomUUID() as Id<"waterLogs">,
-            _creationTime: Date.now(),
+            _creationTime: now,
             userId: myId,
             date: args.date,
             amountMl: args.amountMl,
-            loggedAt: Date.now(),
+            loggedAt: now,
           },
           ...current.logs,
         ],
       }
     );
-  });
+  };
+
+/**
+ * Water logging with an optimistic update, so the ring moves on the same
+ * frame as the tap instead of waiting for the round trip.
+ */
+export function useLogWater(myId: Id<"users"> | undefined) {
+  return useMutation(api.water.log).withOptimisticUpdate(optimisticLog(myId));
 }
 
 export function useUndoWater() {
