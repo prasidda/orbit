@@ -1,11 +1,10 @@
 import { AppShell } from "@/components/shell/app-shell";
-import { EnsureUser } from "@/components/ensure-user";
+import { AuthGate } from "@/components/auth-gate";
 
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
-    <AppShell>
-      <EnsureUser />
-      {children}
-    </AppShell>
+    <AuthGate>
+      <AppShell>{children}</AppShell>
+    </AuthGate>
   );
 }
