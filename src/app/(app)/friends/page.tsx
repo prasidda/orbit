@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
 import { Ring } from "@/tools/water/ring";
-import { formatLitres } from "@/tools/water/use-water";
+import { formatCupsShort } from "@/lib/units";
 
 function Avatar({ name, imageUrl, size = 40 }: { name: string; imageUrl?: string; size?: number }) {
   return (
@@ -49,8 +49,8 @@ export default function FriendsPage() {
         <p className="eyebrow">Friends</p>
         <h1 className="font-display text-4xl">Who&rsquo;s along for the ride</h1>
         <p className="text-sm text-ink-muted">
-          You share tools one at a time, and only with people you&rsquo;ve accepted. Everything
-          stays private until you say otherwise.
+          You share tools one at a time, and only with people you&rsquo;ve accepted. Water is on
+          by default; everything else stays private until you turn it on.
         </p>
       </header>
 
@@ -148,7 +148,7 @@ export default function FriendsPage() {
                     <p className="truncate text-xs text-ink-faint">
                       @{friend.handle}
                       {stat?.water?.lastLoggedAt
-                        ? ` · last sip ${formatDistanceToNowStrict(stat.water.lastLoggedAt)} ago`
+                        ? ` · last cup ${formatDistanceToNowStrict(stat.water.lastLoggedAt)} ago`
                         : ""}
                     </p>
                     {stat?.workouts?.count ? (
@@ -161,7 +161,7 @@ export default function FriendsPage() {
                   {stat?.water ? (
                     <Ring value={stat.water.totalMl} goal={stat.water.goalMl} size={48} stroke={6}>
                       <span className="text-[0.5625rem] font-semibold text-ink-muted">
-                        {formatLitres(stat.water.totalMl)}
+                        {formatCupsShort(stat.water.totalMl)}
                       </span>
                     </Ring>
                   ) : (

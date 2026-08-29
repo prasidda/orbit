@@ -10,10 +10,11 @@ import { TOOLS } from "@/tools/registry";
 import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
+import { AmountInput, useAmountInput } from "@/tools/water/amount-input";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/states";
 import { useTheme } from "@/components/theme-provider";
-import { formatLitres } from "@/tools/water/use-water";
+import { formatCups, DEFAULT_WATER_GOAL_ML } from "@/lib/units";
 
 const THEMES = [
   { value: "light", label: "Light" },
@@ -31,9 +32,9 @@ export default function SettingsPage() {
 
   const [name, setName] = useState<string | null>(null);
   const [handle, setHandle] = useState<string | null>(null);
-  const [waterGoal, setWaterGoal] = useState<string | null>(null);
+  const waterGoal = useAmountInput();
 
-  const currentWaterGoal = settings?.goals?.water ?? 3000;
+  const currentWaterGoal = settings?.goals?.water ?? DEFAULT_WATER_GOAL_ML;
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -104,8 +105,8 @@ export default function SettingsPage() {
       <Card className="space-y-4 p-5">
         <CardHead label="What friends can see" icon={Eye} accent="var(--sage)" />
         <p className="text-sm text-ink-muted">
-          Off means nobody but you can see it, ever. On means accepted friends can see today&rsquo;s
-          summary — never the individual entries.
+          On means accepted friends can see today&rsquo;s summary — never the individual entries.
+          Water starts on so a new friend sees something; everything else starts off.
         </p>
 
         {settings === undefined ? (
@@ -142,26 +143,26 @@ export default function SettingsPage() {
       <Card className="space-y-4 p-5">
         <CardHead label="Goals" icon={Target} accent="var(--tool-water)" />
         <form
-          className="flex items-end gap-2"
+          className="space-y-3"
           onSubmit={async (e) => {
             e.preventDefault();
-            const target = Number(waterGoal);
-            if (!Number.isFinite(target) || target <= 0) return;
+            if (!waterGoal.valid) return;
+            const target = waterGoal.ml;
+            waterGoal.reset();
             await setGoal({ tool: "water", target });
-            setWaterGoal(null);
-            toast.success(`Water goal set to ${formatLitres(target)}`);
+            toast.success(`Water goal set to ${formatCups(target)}`);
           }}
         >
-          <div className="flex-1">
-            <Field label="Water per day (ml)">
-              <Input
-                inputMode="numeric"
-                value={waterGoal ?? String(currentWaterGoal)}
-                onChange={(e) => setWaterGoal(e.target.value)}
-              />
-            </Field>
-          </div>
-          <Button type="submit" size="sm" disabled={waterGoal === null}>
+          <Field label="Water per day" hint={`Currently ${formatCups(currentWaterGoal)}.`}>
+            <AmountInput
+              placeholder="12"
+              value={waterGoal.value}
+              onChange={waterGoal.setValue}
+              unit={waterGoal.unit}
+              onUnitChange={waterGoal.setUnit}
+            />
+          </Field>
+          <Button type="submit" size="sm" disabled={!waterGoal.valid}>
             Save
           </Button>
         </form>

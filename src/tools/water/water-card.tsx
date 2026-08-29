@@ -7,13 +7,14 @@ import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/states";
+import { CUP_ML, formatCups } from "@/lib/units";
 import { Ring } from "./ring";
-import { useLogWater, useUndoWater, useWaterDay, formatLitres } from "./use-water";
+import { AmountInput, useAmountInput } from "./amount-input";
+import { useLogWater, useUndoWater, useWaterDay } from "./use-water";
 
-const QUICK_ADD = [250, 500];
+const QUICK_ADD = [1, 2];
 
 /** A short buzz on log — the phone equivalent of a satisfying click. */
 function haptic() {
@@ -25,7 +26,8 @@ export function WaterCard({ date }: { date: string }) {
   const day = useWaterDay(date);
   const log = useLogWater(me?._id);
   const undo = useUndoWater();
-  const [custom, setCustom] = useState("");
+  const amount = useAmountInput();
+  const [customOpen, setCustomOpen] = useState(false);
 
   const add = async (ml: number) => {
     haptic();
@@ -44,7 +46,7 @@ export function WaterCard({ date }: { date: string }) {
               type="button"
               onClick={async () => {
                 await undo({ date });
-                toast("Last sip removed");
+                toast("Last cup removed");
               }}
               className="flex items-center gap-1 text-xs text-ink-faint transition-colors hover:text-ink"
             >
@@ -61,48 +63,60 @@ export function WaterCard({ date }: { date: string }) {
         ) : (
           <Ring value={day.totalMl} goal={day.goalMl}>
             <div className="space-y-0.5">
-              <p className="font-display text-2xl leading-none">{formatLitres(day.totalMl)}</p>
-              <p className="text-[0.6875rem] text-ink-faint">of {formatLitres(day.goalMl)}</p>
+              <p className="font-display text-2xl leading-none">{formatCups(day.totalMl)}</p>
+              <p className="text-[0.6875rem] text-ink-faint">
+                of {formatCups(day.goalMl)}
+              </p>
             </div>
           </Ring>
         )}
       </div>
 
       <div className="flex items-center justify-center gap-2">
-        {QUICK_ADD.map((ml) => (
-          <Button key={ml} variant="sage" size="sm" onClick={() => add(ml)} disabled={!day}>
-            +{ml}ml
+        {QUICK_ADD.map((cups) => (
+          <Button
+            key={cups}
+            variant="sage"
+            size="sm"
+            onClick={() => add(cups * CUP_ML)}
+            disabled={!day}
+          >
+            +{cups} cup{cups === 1 ? "" : "s"}
           </Button>
         ))}
 
-        <Dialog>
+        <Dialog open={customOpen} onOpenChange={setCustomOpen}>
           <DialogTrigger asChild>
             <Button variant="secondary" size="sm" disabled={!day}>
               Custom
             </Button>
           </DialogTrigger>
-          <DialogContent title="How much?" description="Anything up to 5,000ml in one go.">
+          <DialogContent title="How much?" description="Cups, millilitres or ounces.">
             <form
-              className="flex items-center gap-2"
+              className="space-y-3"
               onSubmit={async (e) => {
                 e.preventDefault();
-                const ml = Number(custom);
-                if (!Number.isFinite(ml) || ml <= 0) return;
-                setCustom("");
+                if (!amount.valid) return;
+                const ml = amount.ml;
+                // Close first so the sheet doesn't hang around on a slow network,
+                // then log — the optimistic update paints the ring immediately.
+                setCustomOpen(false);
+                amount.reset();
                 await add(ml);
-                toast.success(`${ml}ml logged`);
+                toast.success(`${formatCups(ml)} logged`);
               }}
             >
-              <Input
+              <AmountInput
                 autoFocus
-                inputMode="numeric"
-                placeholder="750"
-                value={custom}
-                onChange={(e) => setCustom(e.target.value)}
+                placeholder="3"
+                value={amount.value}
+                onChange={amount.setValue}
+                unit={amount.unit}
+                onUnitChange={amount.setUnit}
               />
-              <DialogClose asChild>
-                <Button type="submit">Add</Button>
-              </DialogClose>
+              <Button type="submit" className="w-full" disabled={!amount.valid}>
+                Add
+              </Button>
             </form>
           </DialogContent>
         </Dialog>

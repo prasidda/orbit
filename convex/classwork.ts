@@ -31,6 +31,30 @@ export const addCourse = mutation({
   },
 });
 
+/**
+ * Deleting a course keeps its assignments — they just lose their tag. Losing
+ * a semester of coursework because you tidied up a course list would be a
+ * nasty surprise.
+ */
+export const removeCourse = mutation({
+  args: { courseId: v.id("courses") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const course = await ctx.db.get(args.courseId);
+    if (!course || course.userId !== me._id) throw new Error("Not found");
+
+    const tagged = await ctx.db
+      .query("assignments")
+      .withIndex("by_course", (q) => q.eq("courseId", course._id))
+      .collect();
+    for (const row of tagged) {
+      await ctx.db.patch(row._id, { courseId: undefined });
+    }
+
+    await ctx.db.delete(course._id);
+  },
+});
+
 export const archiveCourse = mutation({
   args: { courseId: v.id("courses") },
   handler: async (ctx, args) => {

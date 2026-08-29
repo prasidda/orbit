@@ -12,7 +12,7 @@ import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/states";
-import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -26,12 +26,14 @@ function minutesToLabel(min?: number) {
 
 function AddEvent({ date }: { date: string }) {
   const addEvent = useMutation(api.calendar.addEvent);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="size-4" />
@@ -43,18 +45,26 @@ function AddEvent({ date }: { date: string }) {
           className="space-y-3"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (!title.trim()) return;
+            if (!title.trim() || saving) return;
+            setSaving(true);
             const [h, m] = time ? time.split(":").map(Number) : [];
-            await addEvent({
-              title,
-              date,
-              startMin: time ? h * 60 + m : undefined,
-              location: location || undefined,
-            });
-            setTitle("");
-            setTime("");
-            setLocation("");
-            toast.success("Added");
+            try {
+              await addEvent({
+                title,
+                date,
+                startMin: time ? h * 60 + m : undefined,
+                location: location || undefined,
+              });
+              setTitle("");
+              setTime("");
+              setLocation("");
+              setOpen(false);
+              toast.success("Added");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not add that");
+            } finally {
+              setSaving(false);
+            }
           }}
         >
           <Field label="Title">
@@ -77,11 +87,9 @@ function AddEvent({ date }: { date: string }) {
               />
             </Field>
           </div>
-          <DialogClose asChild>
-            <Button type="submit" className="w-full">
-              Add
-            </Button>
-          </DialogClose>
+          <Button type="submit" className="w-full" disabled={saving || !title.trim()}>
+            {saving ? "Adding…" : "Add"}
+          </Button>
         </form>
       </DialogContent>
     </Dialog>

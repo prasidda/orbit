@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
-import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 
 const ACCENT = "var(--tool-workouts)";
 
@@ -159,6 +159,8 @@ export function WorkoutsView() {
   const history = useQuery(api.workouts.history, { from: shiftKey(date, -30), to: shiftKey(date, -1) });
   const create = useMutation(api.workouts.create);
   const [name, setName] = useState("");
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -167,7 +169,7 @@ export function WorkoutsView() {
           <p className="eyebrow">Workouts</p>
           <h1 className="font-display text-4xl">Today&rsquo;s training</h1>
         </div>
-        <Dialog>
+        <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="size-4" />
@@ -179,10 +181,18 @@ export function WorkoutsView() {
               className="flex items-center gap-2"
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (!name.trim()) return;
-                await create({ date, name });
-                setName("");
-                toast.success("Session started");
+                if (!name.trim() || saving) return;
+                setSaving(true);
+                try {
+                  await create({ date, name });
+                  setName("");
+                  setOpen(false);
+                  toast.success("Session started");
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not start that");
+                } finally {
+                  setSaving(false);
+                }
               }}
             >
               <Input
@@ -191,9 +201,9 @@ export function WorkoutsView() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-              <DialogClose asChild>
-                <Button type="submit">Start</Button>
-              </DialogClose>
+              <Button type="submit" disabled={saving || !name.trim()}>
+                {saving ? "Starting…" : "Start"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>

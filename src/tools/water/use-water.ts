@@ -63,9 +63,3 @@ export function useUndoWater() {
 export function useWaterDay(date: string) {
   return useQuery(api.water.day, { date });
 }
-
-export const CUPS_ML = 250;
-
-export function formatLitres(ml: number): string {
-  return `${(ml / 1000).toFixed(ml % 1000 === 0 ? 0 : 2).replace(/\.?0+$/, "")} L`;
-}

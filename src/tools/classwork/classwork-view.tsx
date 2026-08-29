@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { BookOpen, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
-import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 const ACCENT = "var(--tool-classwork)";
@@ -103,12 +103,14 @@ function Row({ item }: { item: Assignment }) {
 
 function AddAssignment({ courses }: { courses: { _id: Id<"courses">; name: string }[] }) {
   const add = useMutation(api.classwork.addAssignment);
+  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(todayKey());
   const [courseId, setCourseId] = useState<string>("");
+  const [saving, setSaving] = useState(false);
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="size-4" />
@@ -120,14 +122,22 @@ function AddAssignment({ courses }: { courses: { _id: Id<"courses">; name: strin
           className="space-y-3"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (!title.trim()) return;
-            await add({
-              title,
-              date,
-              courseId: courseId ? (courseId as Id<"courses">) : undefined,
-            });
-            setTitle("");
-            toast.success("Added");
+            if (!title.trim() || saving) return;
+            setSaving(true);
+            try {
+              await add({
+                title,
+                date,
+                courseId: courseId ? (courseId as Id<"courses">) : undefined,
+              });
+              setTitle("");
+              setOpen(false);
+              toast.success("Added");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not add that");
+            } finally {
+              setSaving(false);
+            }
           }}
         >
           <Field label="Title">
@@ -157,11 +167,9 @@ function AddAssignment({ courses }: { courses: { _id: Id<"courses">; name: strin
               </select>
             </Field>
           ) : null}
-          <DialogClose asChild>
-            <Button type="submit" className="w-full">
-              Add
-            </Button>
-          </DialogClose>
+          <Button type="submit" className="w-full" disabled={saving || !title.trim()}>
+            {saving ? "Adding…" : "Add"}
+          </Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -172,6 +180,7 @@ export function ClassworkView() {
   const courses = useQuery(api.classwork.courses);
   const assignments = useQuery(api.classwork.assignments);
   const addCourse = useMutation(api.classwork.addCourse);
+  const removeCourse = useMutation(api.classwork.removeCourse);
   const [courseName, setCourseName] = useState("");
   const [courseCode, setCourseCode] = useState("");
 
@@ -222,10 +231,23 @@ export function ClassworkView() {
           <ul className="flex flex-wrap gap-2">
             {courses.map((course) => (
               <li key={course._id}>
-                <Badge tone="outline">
+                <Badge tone="outline" className="pr-1">
                   <span className="size-1.5 rounded-full" style={{ background: course.color }} />
                   {course.code ? `${course.code} · ` : ""}
                   {course.name}
+                  <button
+                    type="button"
+                    aria-label={`Delete ${course.name}`}
+                    onClick={async () => {
+                      await removeCourse({ courseId: course._id });
+                      toast(`${course.name} deleted`, {
+                        description: "Its assignments stayed, just untagged.",
+                      });
+                    }}
+                    className="ml-0.5 grid size-4 place-items-center rounded-full text-ink-faint transition-colors hover:bg-danger-soft hover:text-danger"
+                  >
+                    <X className="size-3" />
+                  </button>
                 </Badge>
               </li>
             ))}

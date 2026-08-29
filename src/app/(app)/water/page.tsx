@@ -7,17 +7,18 @@ import { Droplet, Trash2, Target } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
 import { todayKey, shiftKey } from "@/lib/dates";
+import { CUP_ML, formatCups } from "@/lib/units";
 import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
-import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Ring } from "@/tools/water/ring";
-import { useLogWater, useWaterDay, formatLitres } from "@/tools/water/use-water";
+import { AmountInput, useAmountInput } from "@/tools/water/amount-input";
+import { useLogWater, useWaterDay } from "@/tools/water/use-water";
 import { WaterHistory } from "@/tools/water/history";
 
-const QUICK_ADD = [250, 500, 750];
+const QUICK_ADD = [1, 2, 3];
 
 export default function WaterPage() {
   const date = todayKey();
@@ -26,7 +27,11 @@ export default function WaterPage() {
   const log = useLogWater(me?._id);
   const removeLog = useMutation(api.water.removeLog);
   const setGoal = useMutation(api.settings.setGoal);
-  const [goalInput, setGoalInput] = useState("");
+
+  const custom = useAmountInput();
+  const goal = useAmountInput();
+  const [customOpen, setCustomOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   const add = async (ml: number) => {
     if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate(10);
@@ -48,48 +53,88 @@ export default function WaterPage() {
         ) : (
           <Ring value={day.totalMl} goal={day.goalMl} size={180} stroke={16}>
             <div className="space-y-1">
-              <p className="font-display text-3xl leading-none">{formatLitres(day.totalMl)}</p>
-              <p className="text-xs text-ink-faint">of {formatLitres(day.goalMl)}</p>
+              <p className="font-display text-3xl leading-none">{formatCups(day.totalMl)}</p>
+              <p className="text-xs text-ink-faint">of {formatCups(day.goalMl)}</p>
               <Badge tone={pct >= 100 ? "sage" : "neutral"}>{pct}%</Badge>
             </div>
           </Ring>
         )}
 
         <div className="flex flex-wrap items-center justify-center gap-2">
-          {QUICK_ADD.map((ml) => (
-            <Button key={ml} variant="sage" onClick={() => add(ml)} disabled={!day}>
-              +{ml}ml
+          {QUICK_ADD.map((cups) => (
+            <Button key={cups} variant="sage" onClick={() => add(cups * CUP_ML)} disabled={!day}>
+              +{cups} cup{cups === 1 ? "" : "s"}
             </Button>
           ))}
-          <Dialog>
+
+          <Dialog open={customOpen} onOpenChange={setCustomOpen}>
+            <DialogTrigger asChild>
+              <Button variant="secondary" disabled={!day}>
+                Custom
+              </Button>
+            </DialogTrigger>
+            <DialogContent title="How much?" description="Cups, millilitres or ounces.">
+              <form
+                className="space-y-3"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!custom.valid) return;
+                  const ml = custom.ml;
+                  setCustomOpen(false);
+                  custom.reset();
+                  await add(ml);
+                  toast.success(`${formatCups(ml)} logged`);
+                }}
+              >
+                <AmountInput
+                  autoFocus
+                  placeholder="3"
+                  value={custom.value}
+                  onChange={custom.setValue}
+                  unit={custom.unit}
+                  onUnitChange={custom.setUnit}
+                />
+                <Button type="submit" className="w-full" disabled={!custom.valid}>
+                  Add
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={goalOpen} onOpenChange={setGoalOpen}>
             <DialogTrigger asChild>
               <Button variant="secondary" disabled={!day}>
                 <Target className="size-4" />
                 Goal
               </Button>
             </DialogTrigger>
-            <DialogContent title="Daily goal" description="How much water are you aiming for?">
+            <DialogContent
+              title="Daily goal"
+              description={day ? `Currently ${formatCups(day.goalMl)} a day.` : undefined}
+            >
               <form
-                className="flex items-center gap-2"
+                className="space-y-3"
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  const target = Number(goalInput);
-                  if (!Number.isFinite(target) || target <= 0) return;
+                  if (!goal.valid) return;
+                  const target = goal.ml;
+                  setGoalOpen(false);
+                  goal.reset();
                   await setGoal({ tool: "water", target });
-                  setGoalInput("");
-                  toast.success(`Goal set to ${formatLitres(target)}`);
+                  toast.success(`Goal set to ${formatCups(target)}`);
                 }}
               >
-                <Input
+                <AmountInput
                   autoFocus
-                  inputMode="numeric"
-                  placeholder={String(day?.goalMl ?? 3000)}
-                  value={goalInput}
-                  onChange={(e) => setGoalInput(e.target.value)}
+                  placeholder="12"
+                  value={goal.value}
+                  onChange={goal.setValue}
+                  unit={goal.unit}
+                  onUnitChange={goal.setUnit}
                 />
-                <DialogClose asChild>
-                  <Button type="submit">Save</Button>
-                </DialogClose>
+                <Button type="submit" className="w-full" disabled={!goal.valid}>
+                  Save
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -117,10 +162,8 @@ export default function WaterPage() {
                 className="group flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-2.5"
               >
                 <Droplet className="size-4 shrink-0 text-water" />
-                <span className="flex-1 text-sm font-medium">{entry.amountMl}ml</span>
-                <span className="text-xs text-ink-faint">
-                  {format(entry.loggedAt, "h:mm a")}
-                </span>
+                <span className="flex-1 text-sm font-medium">{formatCups(entry.amountMl)}</span>
+                <span className="text-xs text-ink-faint">{format(entry.loggedAt, "h:mm a")}</span>
                 <button
                   type="button"
                   aria-label="Remove"

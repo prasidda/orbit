@@ -9,7 +9,7 @@ import { fromDateKey, rangeKeys } from "@/lib/dates";
 import { Card, CardHead } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/states";
-import { formatLitres } from "./use-water";
+import { formatCups } from "@/lib/units";
 
 /** Days in a row, counting back from today, where the goal was met. */
 function streakFrom(days: { date: string; totalMl: number }[], goalMl: number): number {
@@ -90,7 +90,7 @@ export function WaterHistory({ from, to }: { from: string; to: string }) {
       </div>
 
       <p className="text-xs text-ink-faint">
-        Goal {formatLitres(history.goalMl)} · best day {formatLitres(best)}
+        Goal {formatCups(history.goalMl)} · best day {formatCups(best)}
       </p>
     </Card>
   );

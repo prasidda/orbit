@@ -162,7 +162,7 @@ export const dailyStats = query({
           .unique();
         water = {
           totalMl: logs.reduce((sum, l) => sum + l.amountMl, 0),
-          goalMl: goal?.target ?? 3000,
+          goalMl: goal?.target ?? 2880,
           lastLoggedAt: logs.length ? Math.max(...logs.map((l) => l.loggedAt)) : null,
         };
       }

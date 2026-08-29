@@ -3,7 +3,8 @@ import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { requireUser, assertCanView, Ctx } from "./lib/auth";
 
-export const DEFAULT_GOAL_ML = 3000;
+/** 12 cups at 240ml. Kept in sync with DEFAULT_WATER_GOAL_ML in src/lib/units.ts. */
+export const DEFAULT_GOAL_ML = 2880;
 
 async function goalFor(ctx: Ctx, userId: Id<"users">): Promise<number> {
   const goal = await ctx.db
