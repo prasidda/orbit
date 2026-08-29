@@ -130,13 +130,31 @@ export const addAssignment = mutation({
   },
 });
 
+/**
+ * Checking something off records *when*, which is what puts it on the
+ * calendar on the day you finished it rather than the day it was due.
+ *
+ * `today` comes from the client because only the browser knows the user's
+ * local date — deriving it server-side would file late-evening work under
+ * tomorrow.
+ */
 export const setStatus = mutation({
-  args: { assignmentId: v.id("assignments"), status },
+  args: { assignmentId: v.id("assignments"), status, today: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const me = await requireUser(ctx);
     const row = await ctx.db.get(args.assignmentId);
     if (!row || row.userId !== me._id) throw new Error("Not found");
-    await ctx.db.patch(row._id, { status: args.status });
+
+    if (args.status === "done") {
+      // Keep the original completion day if it's already done — re-checking
+      // an item shouldn't quietly move it to today.
+      await ctx.db.patch(row._id, {
+        status: "done",
+        completedDate: row.completedDate ?? args.today ?? row.date,
+      });
+    } else {
+      await ctx.db.patch(row._id, { status: args.status, completedDate: undefined });
+    }
   },
 });
 

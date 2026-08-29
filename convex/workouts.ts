@@ -63,12 +63,45 @@ export const exercises = query({
 });
 
 export const create = mutation({
-  args: { date: v.string(), name: v.string() },
+  args: {
+    date: v.string(),
+    name: v.string(),
+    // Weekly repeat on the same weekday, stored as a rule the calendar
+    // expands — see convex/recurrences.ts.
+    repeatWeekly: v.optional(v.boolean()),
+    weekday: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const me = await requireUser(ctx);
     const name = args.name.trim();
     if (!name) throw new Error("Give the session a name");
-    return await ctx.db.insert("workouts", { userId: me._id, date: args.date, name });
+
+    const workoutId = await ctx.db.insert("workouts", {
+      userId: me._id,
+      date: args.date,
+      name,
+    });
+
+    if (args.repeatWeekly && args.weekday !== undefined) {
+      const existing = await ctx.db
+        .query("recurrences")
+        .withIndex("by_user", (q) => q.eq("userId", me._id))
+        .collect();
+      const duplicate = existing.some(
+        (r) => r.tool === "workouts" && r.title.toLowerCase() === name.toLowerCase()
+      );
+      if (!duplicate) {
+        await ctx.db.insert("recurrences", {
+          userId: me._id,
+          tool: "workouts",
+          title: name,
+          byDay: [args.weekday],
+          startsOn: args.date,
+        });
+      }
+    }
+
+    return workoutId;
   },
 });
 
@@ -126,6 +159,51 @@ export const addSet = mutation({
       unit: args.unit,
       order: existing.length,
     });
+  },
+});
+
+/**
+ * How long the session took. Typed rather than timed — a stopwatch you have
+ * to remember to stop produces worse data than a number you enter after.
+ */
+export const setDuration = mutation({
+  args: { workoutId: v.id("workouts"), durationMin: v.number() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const workout = await ctx.db.get(args.workoutId);
+    if (!workout || workout.userId !== me._id) throw new Error("Not found");
+
+    const minutes = Math.max(0, Math.round(args.durationMin));
+    await ctx.db.patch(workout._id, {
+      durationMin: minutes === 0 ? undefined : minutes,
+    });
+  },
+});
+
+/** Minutes trained per day — the workouts equivalent of the water chart. */
+export const minutesByDay = query({
+  args: { from: v.string(), to: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_date", (q) =>
+        q.eq("userId", me._id).gte("date", args.from).lte("date", args.to)
+      )
+      .collect();
+
+    const byDate = new Map<string, number>();
+    for (const row of rows) {
+      byDate.set(row.date, (byDate.get(row.date) ?? 0) + (row.durationMin ?? 0));
+    }
+
+    return {
+      days: [...byDate.entries()]
+        .map(([date, minutes]) => ({ date, minutes }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      sessionCount: rows.length,
+      untimed: rows.filter((r) => r.durationMin === undefined).length,
+    };
   },
 });
 

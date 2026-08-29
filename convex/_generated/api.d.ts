@@ -12,6 +12,8 @@ import type * as calendar from "../calendar.js";
 import type * as classwork from "../classwork.js";
 import type * as friends from "../friends.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_recurrence from "../lib/recurrence.js";
+import type * as recurrences from "../recurrences.js";
 import type * as settings from "../settings.js";
 import type * as users from "../users.js";
 import type * as water from "../water.js";
@@ -28,6 +30,8 @@ declare const fullApi: ApiFromModules<{
   classwork: typeof classwork;
   friends: typeof friends;
   "lib/auth": typeof lib_auth;
+  "lib/recurrence": typeof lib_recurrence;
+  recurrences: typeof recurrences;
   settings: typeof settings;
   users: typeof users;
   water: typeof water;

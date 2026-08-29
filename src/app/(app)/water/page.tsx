@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { Droplet, Trash2, Target } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
-import { todayKey, shiftKey } from "@/lib/dates";
+import { todayKey } from "@/lib/dates";
 import { CUP_ML, formatCups } from "@/lib/units";
 import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -178,7 +178,7 @@ export default function WaterPage() {
         )}
       </Card>
 
-      <WaterHistory from={shiftKey(date, -13)} to={date} />
+      <WaterHistory />
     </div>
   );
 }

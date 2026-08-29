@@ -101,9 +101,13 @@ export default defineSchema({
     status: v.union(v.literal("todo"), v.literal("doing"), v.literal("done")),
     notes: v.optional(v.string()),
     grade: v.optional(v.string()),
+    // The day it was actually checked off, which is rarely the due date.
+    // Kept separate so the calendar can show "due here, finished there".
+    completedDate: v.optional(v.string()),
   })
     .index("by_user_date", ["userId", "date"])
     .index("by_user_status", ["userId", "status"])
+    .index("by_user_completed", ["userId", "completedDate"])
     .index("by_course", ["courseId"]),
 
   events: defineTable({
@@ -116,6 +120,25 @@ export default defineSchema({
     notes: v.optional(v.string()),
     color: v.optional(v.string()),
   }).index("by_user_date", ["userId", "date"]),
+
+  /**
+   * Weekly repeats, stored as a rule rather than as hundreds of rows.
+   *
+   * The calendar expands these into "planned" occurrences at read time, so
+   * changing the rule updates every future week at once and the table stays
+   * one row per habit. An occurrence only becomes a real row when you
+   * actually do the thing.
+   */
+  recurrences: defineTable({
+    userId: v.id("users"),
+    tool: v.union(v.literal("workouts"), v.literal("calendar")),
+    title: v.string(),
+    byDay: v.array(v.number()), // 0 = Sunday … 6 = Saturday
+    startsOn: v.string(),
+    endsOn: v.optional(v.string()),
+    startMin: v.optional(v.number()),
+    location: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
 
   // A friend tapping "nudge" on your water card.
   nudges: defineTable({
