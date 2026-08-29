@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireUser } from "./lib/auth";
+import { requireUser, DEFAULT_VISIBILITY } from "./lib/auth";
 
 const tool = v.union(
   v.literal("water"),
@@ -24,7 +24,12 @@ export const mine = query({
       .collect();
 
     return {
-      sharing: Object.fromEntries(shares.map((s) => [s.tool, s.visibility])),
+      // Defaults first, explicit rows over the top — the same precedence
+      // `canView` applies, so the toggles can never disagree with reality.
+      sharing: {
+        ...DEFAULT_VISIBILITY,
+        ...Object.fromEntries(shares.map((s) => [s.tool, s.visibility])),
+      },
       goals: Object.fromEntries(goals.map((g) => [g.tool, g.target])),
     };
   },

@@ -1,8 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query, MutationCtx } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { mutation, query } from "./_generated/server";
 import { getMe, requireUser } from "./lib/auth";
-import { DEFAULT_GOAL_ML } from "./water";
 
 function slugify(input: string): string {
   const base = input
@@ -10,29 +8,6 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, "")
     .slice(0, 18);
   return base.length >= 3 ? base : `orbit${Math.random().toString(36).slice(2, 6)}`;
-}
-
-/**
- * Water is the one tool that starts shared: a friend who sees nothing on day
- * one has no reason to come back. Seeding is idempotent and only ever fills a
- * *missing* row, so someone who deliberately turns water off stays off.
- */
-async function seedDefaults(ctx: MutationCtx, userId: Id<"users">) {
-  const share = await ctx.db
-    .query("shareSettings")
-    .withIndex("by_user_tool", (q) => q.eq("userId", userId).eq("tool", "water"))
-    .unique();
-  if (!share) {
-    await ctx.db.insert("shareSettings", { userId, tool: "water", visibility: "friends" });
-  }
-
-  const goal = await ctx.db
-    .query("goals")
-    .withIndex("by_user_tool", (q) => q.eq("userId", userId).eq("tool", "water"))
-    .unique();
-  if (!goal) {
-    await ctx.db.insert("goals", { userId, tool: "water", target: DEFAULT_GOAL_ML });
-  }
 }
 
 /**
@@ -57,8 +32,6 @@ export const store = mutation({
       if (existing.name !== name || existing.imageUrl !== identity.pictureUrl) {
         await ctx.db.patch(existing._id, { name, imageUrl: identity.pictureUrl });
       }
-      // Also backfills anyone who signed up before these defaults existed.
-      await seedDefaults(ctx, existing._id);
       return existing._id;
     }
 
@@ -73,15 +46,13 @@ export const store = mutation({
       handle = `${slugify(name)}${Math.floor(Math.random() * 900 + 100)}`;
     }
 
-    const userId = await ctx.db.insert("users", {
+    return await ctx.db.insert("users", {
       clerkId: identity.subject,
       name,
       handle,
       imageUrl: identity.pictureUrl,
       timezone: "America/New_York",
     });
-    await seedDefaults(ctx, userId);
-    return userId;
   },
 });
 

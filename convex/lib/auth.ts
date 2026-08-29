@@ -3,6 +3,25 @@ import { Doc, Id } from "../_generated/dataModel";
 
 export type Ctx = QueryCtx | MutationCtx;
 export type Tool = "water" | "workouts" | "classwork" | "calendar";
+export type Visibility = "private" | "friends";
+
+/**
+ * What a tool shares before the user has said anything.
+ *
+ * Water is on: a friend who sees nothing on day one has no reason to come
+ * back, and a daily water total is about as low-stakes as shared data gets.
+ * Everything else is off, and any explicit choice writes a row that wins over
+ * this table — including turning water off.
+ *
+ * This is a default rather than seeded rows on purpose: it applies to accounts
+ * that already existed, with no backfill to run.
+ */
+export const DEFAULT_VISIBILITY: Record<Tool, Visibility> = {
+  water: "friends",
+  workouts: "private",
+  classwork: "private",
+  calendar: "private",
+};
 
 /**
  * THE AUTHORIZATION SURFACE.
@@ -55,12 +74,12 @@ export async function canView(
   if (!me) return false;
   if (me._id === ownerId) return true;
 
-  // Sharing is opt-in: no row means private.
+  // An explicit row always wins; otherwise fall back to the tool's default.
   const share = await ctx.db
     .query("shareSettings")
     .withIndex("by_user_tool", (q) => q.eq("userId", ownerId).eq("tool", tool))
     .unique();
-  if (share?.visibility !== "friends") return false;
+  if ((share?.visibility ?? DEFAULT_VISIBILITY[tool]) !== "friends") return false;
 
   return await areFriends(ctx, me._id, ownerId);
 }
