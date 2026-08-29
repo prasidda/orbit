@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { format } from "date-fns";
 import { Clock, Dumbbell, Play, Plus, Timer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -11,14 +10,14 @@ import { todayKey, shiftKey, formatDayShort, fromDateKey } from "@/lib/dates";
 import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { HistoryChart, RangePicker, useHistoryRange } from "@/components/history-chart";
 import { SetForm } from "./set-form";
 import { formatDuration } from "@/lib/duration";
-import { WeeklySplit } from "./weekly-split";
+import { DayToggles, describeDays } from "./day-toggles";
+import { SessionSchedule } from "./session-schedule";
 
 const ACCENT = "var(--tool-workouts)";
 
@@ -70,7 +69,6 @@ function DurationField({
   );
 }
 
-/** Reps and time sets read differently, so they're formatted differently. */
 function setLabel(set: SetRow): string {
   if (set.kind === "time") return formatDuration(set.durationSec ?? 0);
   return `${set.reps ?? 0} × ${set.weight ?? 0}${set.unit ?? "lb"}`;
@@ -123,7 +121,7 @@ function WorkoutCard({
         {workout.timeSec > 0 ? (
           <Badge tone="sage">
             <Timer className="size-3" />
-            {formatDuration(workout.timeSec)} under tension
+            {formatDuration(workout.timeSec)}
           </Badge>
         ) : null}
       </div>
@@ -162,57 +160,119 @@ function WorkoutCard({
 }
 
 /**
- * What the split says you're doing today, if you haven't started it yet.
- * One tap turns the plan into a real session.
+ * One dialog for both halves of the same thought: what the session is, and
+ * which days it happens. Leave the days blank and it's a one-off today.
  */
-function TodaysPlan({ date, startedNames }: { date: string; startedNames: string[] }) {
-  const rules = useQuery(api.recurrences.list);
+function NewSession({ date }: { date: string }) {
   const create = useMutation(api.workouts.create);
-  const [starting, setStarting] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const [days, setDays] = useState<number[]>([]);
 
   const weekday = fromDateKey(date).getDay();
-  const started = new Set(startedNames.map((n) => n.toLowerCase()));
-  const planned = (rules ?? []).filter(
-    (rule) =>
-      rule.tool === "workouts" &&
-      rule.byDay.includes(weekday) &&
-      !started.has(rule.title.toLowerCase())
-  );
-
-  if (planned.length === 0) return null;
+  const landsToday = days.length === 0 || days.includes(weekday);
 
   return (
-    <Card className="space-y-3 p-5">
-      <CardHead label="Planned today" icon={Play} accent={ACCENT} />
-      <ul className="space-y-2">
-        {planned.map((rule) => (
-          <li
-            key={rule._id}
-            className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-2.5"
-          >
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{rule.title}</span>
-            <Button
-              size="sm"
-              disabled={starting === rule._id}
-              onClick={async () => {
-                setStarting(rule._id);
-                try {
-                  // No repeat flag here — the rule already exists, and passing
-                  // it would try to create a duplicate of itself.
-                  await create({ date, name: rule.title });
-                  toast.success(`${rule.title} started`);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Could not start that");
-                } finally {
-                  setStarting(null);
-                }
-              }}
-            >
-              {starting === rule._id ? "Starting…" : "Start"}
-            </Button>
-          </li>
-        ))}
-      </ul>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="shrink-0">
+          <Plus className="size-4" />
+          Session
+        </Button>
+      </DialogTrigger>
+      <DialogContent title="New session" description="Name it, then pick the days it repeats.">
+        <form
+          className="space-y-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!name.trim() || saving) return;
+            setSaving(true);
+            try {
+              await create({ date, name, repeatDays: days });
+              setName("");
+              setDays([]);
+              setOpen(false);
+              toast.success(
+                days.length === 0
+                  ? "Session started"
+                  : landsToday
+                    ? "Session started, and it repeats"
+                    : "Added to your week"
+              );
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not save that");
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <Input
+            autoFocus
+            placeholder="Legs"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <div className="space-y-2 rounded-tile bg-surface-sunk px-3 py-2.5">
+            <p className="text-sm font-medium">Repeats on</p>
+            <DayToggles
+              size="md"
+              selected={days}
+              onToggle={(day) =>
+                setDays((current) =>
+                  current.includes(day) ? current.filter((d) => d !== day) : [...current, day]
+                )
+              }
+            />
+            <p className="text-xs text-ink-faint">
+              {days.length === 0
+                ? "No days picked — just a one-off today."
+                : landsToday
+                  ? `${describeDays(days)} — starting today.`
+                  : `${describeDays(days)} — nothing logged today.`}
+            </p>
+          </div>
+
+          <Button type="submit" className="w-full" disabled={saving || !name.trim()}>
+            {saving ? "Saving…" : days.length === 0 ? "Start" : "Save"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** A scheduled session you haven't started — one tap makes it real. */
+function PlannedRow({ date, title }: { date: string; title: string }) {
+  const create = useMutation(api.workouts.create);
+  const [starting, setStarting] = useState(false);
+
+  return (
+    <Card className="flex items-center gap-3 p-4">
+      <Play className="size-4 shrink-0" style={{ color: ACCENT }} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">{title}</p>
+        <p className="text-xs text-ink-faint">on your schedule for today</p>
+      </div>
+      <Button
+        size="sm"
+        disabled={starting}
+        onClick={async () => {
+          setStarting(true);
+          try {
+            // startNow because the rule already exists; this only adds the row.
+            await create({ date, name: title, startNow: true });
+            toast.success(`${title} started`);
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not start that");
+          } finally {
+            setStarting(false);
+          }
+        }}
+      >
+        {starting ? "Starting…" : "Start"}
+      </Button>
     </Card>
   );
 }
@@ -263,15 +323,22 @@ function WorkoutHistory() {
 export function WorkoutsView() {
   const date = todayKey();
   const today = useQuery(api.workouts.day, { date });
+  const rules = useQuery(api.recurrences.list);
   const recent = useQuery(api.workouts.history, {
     from: shiftKey(date, -30),
     to: shiftKey(date, -1),
   });
-  const create = useMutation(api.workouts.create);
-  const [name, setName] = useState("");
-  const [repeat, setRepeat] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+
+  const weekday = fromDateKey(date).getDay();
+  const started = new Set((today ?? []).map((w) => w.name.toLowerCase()));
+  const plannedToday = (rules ?? []).filter(
+    (rule) =>
+      rule.tool === "workouts" &&
+      rule.byDay.includes(weekday) &&
+      !started.has(rule.title.toLowerCase())
+  );
+
+  const nothingToday = today !== undefined && today.length === 0 && plannedToday.length === 0;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -280,80 +347,31 @@ export function WorkoutsView() {
           <p className="eyebrow">Workouts</p>
           <h1 className="font-display text-3xl sm:text-4xl">Today&rsquo;s training</h1>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="shrink-0">
-              <Plus className="size-4" />
-              Session
-            </Button>
-          </DialogTrigger>
-          <DialogContent title="New session" description="Name it however you think about it.">
-            <form
-              className="space-y-3"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!name.trim() || saving) return;
-                setSaving(true);
-                try {
-                  await create({
-                    date,
-                    name,
-                    repeatWeekly: repeat,
-                    weekday: fromDateKey(date).getDay(),
-                  });
-                  setName("");
-                  setRepeat(false);
-                  setOpen(false);
-                  toast.success("Session started");
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Could not start that");
-                } finally {
-                  setSaving(false);
-                }
-              }}
-            >
-              <Input
-                autoFocus
-                placeholder="Push day"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-
-              <label className="flex items-center justify-between gap-3 rounded-tile bg-surface-sunk px-3 py-2.5">
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">Repeat weekly</span>
-                  <span className="block text-xs text-ink-faint">
-                    Every {format(fromDateKey(date), "EEEE")}. Edit days in the split below.
-                  </span>
-                </span>
-                <Switch checked={repeat} onCheckedChange={setRepeat} />
-              </label>
-
-              <Button type="submit" className="w-full" disabled={saving || !name.trim()}>
-                {saving ? "Starting…" : "Start"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <NewSession date={date} />
       </header>
-
-      <TodaysPlan date={date} startedNames={(today ?? []).map((w) => w.name)} />
 
       {today === undefined ? (
         <Skeleton className="h-40 w-full rounded-card" />
-      ) : today.length === 0 ? (
+      ) : nothingToday ? (
         <Card className="p-2">
           <EmptyState
             icon={Dumbbell}
-            title="Nothing logged today"
-            body="Start a session and add sets as you go — reps and weight, or a time for anything you hold or run."
+            title="Nothing on for today"
+            body="Add a session and pick the days it repeats — reps and weight, or a time for anything you hold or run."
           />
         </Card>
       ) : (
-        today.map((workout) => <WorkoutCard key={workout._id} workout={workout} />)
+        <>
+          {plannedToday.map((rule) => (
+            <PlannedRow key={rule._id} date={date} title={rule.title} />
+          ))}
+          {today.map((workout) => (
+            <WorkoutCard key={workout._id} workout={workout} />
+          ))}
+        </>
       )}
 
-      <WeeklySplit />
+      <SessionSchedule />
 
       <WorkoutHistory />
 

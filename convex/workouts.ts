@@ -72,46 +72,70 @@ export const exercises = query({
   },
 });
 
+/**
+ * Creating a session and scheduling it are the same act.
+ *
+ * A workout is a name plus the days it happens on. `repeatDays` empty means
+ * a one-off today; otherwise the session repeats on those weekdays and today
+ * only gets a real row if today is one of them. Splitting these into separate
+ * "session" and "split" concepts meant two doors to the same room.
+ */
 export const create = mutation({
   args: {
     date: v.string(),
     name: v.string(),
-    // Weekly repeat on the same weekday, stored as a rule the calendar
-    // expands — see convex/recurrences.ts.
-    repeatWeekly: v.optional(v.boolean()),
-    weekday: v.optional(v.number()),
+    repeatDays: v.optional(v.array(v.number())),
+    /** Force a row for `date` even if it isn't one of the repeat days. */
+    startNow: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const me = await requireUser(ctx);
     const name = args.name.trim();
     if (!name) throw new Error("Give the session a name");
 
-    const workoutId = await ctx.db.insert("workouts", {
-      userId: me._id,
-      date: args.date,
-      name,
-    });
+    const repeatDays = [...new Set((args.repeatDays ?? []).filter((d) => d >= 0 && d <= 6))].sort();
 
-    if (args.repeatWeekly && args.weekday !== undefined) {
+    if (repeatDays.length > 0) {
       const existing = await ctx.db
         .query("recurrences")
         .withIndex("by_user", (q) => q.eq("userId", me._id))
         .collect();
-      const duplicate = existing.some(
+      const match = existing.find(
         (r) => r.tool === "workouts" && r.title.toLowerCase() === name.toLowerCase()
       );
-      if (!duplicate) {
+
+      // Same name means the same session — update its days rather than
+      // stacking a second rule that fires alongside the first.
+      if (match) {
+        await ctx.db.patch(match._id, { byDay: repeatDays });
+      } else {
         await ctx.db.insert("recurrences", {
           userId: me._id,
           tool: "workouts",
           title: name,
-          byDay: [args.weekday],
+          byDay: repeatDays,
           startsOn: args.date,
         });
       }
     }
 
-    return workoutId;
+    const weekday = new Date(`${args.date}T12:00:00Z`).getUTCDay();
+    const happensToday = repeatDays.length === 0 || repeatDays.includes(weekday);
+    if (!args.startNow && !happensToday) return null;
+
+    // Don't create a second row for a session already logged today.
+    const alreadyToday = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_date", (q) => q.eq("userId", me._id).eq("date", args.date))
+      .collect();
+    const duplicate = alreadyToday.find((w) => w.name.toLowerCase() === name.toLowerCase());
+    if (duplicate) return duplicate._id;
+
+    return await ctx.db.insert("workouts", {
+      userId: me._id,
+      date: args.date,
+      name,
+    });
   },
 });
 

@@ -201,6 +201,16 @@ export type DaySummary = {
     setCount: number;
     volume: number;
     timeSec: number;
+    /** The actual exercises, so the day reads as a session, not a count. */
+    sets: {
+      id: Id<"workoutSets">;
+      exercise: string;
+      kind?: "reps" | "time";
+      reps?: number;
+      weight?: number;
+      unit?: string;
+      durationSec?: number;
+    }[];
   }[];
   planned: { id: string; tool: "workouts" | "calendar"; title: string; startMin?: number }[];
   due: { id: Id<"assignments">; title: string; course?: string; status: string }[];
@@ -249,6 +259,17 @@ export const day = query({
           0
         ),
         timeSec: sets.reduce((sum, s) => sum + (s.durationSec ?? 0), 0),
+        sets: sets
+          .sort((a, b) => a.order - b.order)
+          .map((s) => ({
+            id: s._id,
+            exercise: s.exercise,
+            kind: s.kind,
+            reps: s.reps,
+            weight: s.weight,
+            unit: s.unit,
+            durationSec: s.durationSec,
+          })),
       });
     }
 

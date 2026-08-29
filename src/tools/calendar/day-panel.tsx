@@ -148,17 +148,40 @@ export function DayPanel({ date }: { date: string }) {
         <Section label="Workouts" icon={Dumbbell} accent={TOOL_BY_KEY.workouts.accent}>
           <div className="space-y-1.5">
             {workouts.map((workout) => (
-              <Line
-                key={workout.id}
-                title={workout.name}
-                detail={[
-                  `${workout.setCount} set${workout.setCount === 1 ? "" : "s"}`,
-                  workout.volume > 0 ? `${workout.volume.toLocaleString()} lb` : null,
-                  workout.timeSec > 0 ? formatDuration(workout.timeSec) : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              />
+              /* The session is the heading and its exercises sit under it —
+                 "3 sets" alone never told you what you actually did. */
+              <div key={workout.id} className="rounded-tile bg-surface-sunk px-3 py-2.5">
+                <div className="flex items-baseline gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-semibold">{workout.name}</p>
+                  <p className="shrink-0 text-xs text-ink-faint">
+                    {[
+                      workout.volume > 0 ? `${workout.volume.toLocaleString()} lb` : null,
+                      workout.timeSec > 0 ? formatDuration(workout.timeSec) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+
+                {workout.sets.length > 0 ? (
+                  <ul className="mt-1.5 space-y-0.5 border-l-2 border-line pl-2.5">
+                    {workout.sets.map((set) => (
+                      <li key={set.id} className="flex items-baseline gap-2 text-xs">
+                        <span className="min-w-0 flex-1 truncate text-ink-muted">
+                          {set.exercise}
+                        </span>
+                        <span className="shrink-0 tabular-nums text-ink-faint">
+                          {set.kind === "time"
+                            ? formatDuration(set.durationSec ?? 0)
+                            : `${set.reps ?? 0} × ${set.weight ?? 0}${set.unit ?? "lb"}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-xs text-ink-faint">No sets logged.</p>
+                )}
+              </div>
             ))}
           </div>
         </Section>
