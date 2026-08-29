@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Clock, Dumbbell, Plus, Trash2 } from "lucide-react";
+import { format } from "date-fns";
+import { Clock, Dumbbell, Play, Plus, Timer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -15,67 +16,21 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { HistoryChart, RangePicker, useHistoryRange } from "@/components/history-chart";
-import { format } from "date-fns";
+import { SetForm } from "./set-form";
+import { formatDuration } from "@/lib/duration";
+import { WeeklySplit } from "./weekly-split";
 
 const ACCENT = "var(--tool-workouts)";
 
-function SetForm({ workoutId }: { workoutId: Id<"workouts"> }) {
-  const addSet = useMutation(api.workouts.addSet);
-  const suggestions = useQuery(api.workouts.exercises);
-  const [exercise, setExercise] = useState("");
-  const [reps, setReps] = useState("");
-  const [weight, setWeight] = useState("");
-
-  return (
-    <form
-      className="flex flex-wrap items-center gap-2"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!exercise.trim()) return;
-        await addSet({
-          workoutId,
-          exercise,
-          reps: Number(reps) || 1,
-          weight: Number(weight) || 0,
-          unit: "lb",
-        });
-        // Keep the exercise so logging set after set is one field, not three.
-        setReps("");
-        setWeight("");
-      }}
-    >
-      <Input
-        list="exercise-suggestions"
-        placeholder="Exercise"
-        value={exercise}
-        onChange={(e) => setExercise(e.target.value)}
-        className="h-10 min-w-0 flex-[2] basis-40"
-      />
-      <datalist id="exercise-suggestions">
-        {(suggestions ?? []).map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
-      <Input
-        inputMode="numeric"
-        placeholder="Reps"
-        value={reps}
-        onChange={(e) => setReps(e.target.value)}
-        className="h-10 min-w-0 flex-1 basis-20"
-      />
-      <Input
-        inputMode="decimal"
-        placeholder="lb"
-        value={weight}
-        onChange={(e) => setWeight(e.target.value)}
-        className="h-10 min-w-0 flex-1 basis-20"
-      />
-      <Button type="submit" size="icon" aria-label="Add set">
-        <Plus className="size-4" />
-      </Button>
-    </form>
-  );
-}
+type SetRow = {
+  _id: Id<"workoutSets">;
+  exercise: string;
+  kind?: "reps" | "time";
+  reps?: number;
+  weight?: number;
+  unit?: string;
+  durationSec?: number;
+};
 
 /** Minutes for the session — the number the history chart is built from. */
 function DurationField({
@@ -115,6 +70,12 @@ function DurationField({
   );
 }
 
+/** Reps and time sets read differently, so they're formatted differently. */
+function setLabel(set: SetRow): string {
+  if (set.kind === "time") return formatDuration(set.durationSec ?? 0);
+  return `${set.reps ?? 0} × ${set.weight ?? 0}${set.unit ?? "lb"}`;
+}
+
 function WorkoutCard({
   workout,
 }: {
@@ -123,14 +84,9 @@ function WorkoutCard({
     name: string;
     date: string;
     volume: number;
+    timeSec: number;
     durationMin?: number;
-    sets: {
-      _id: Id<"workoutSets">;
-      exercise: string;
-      reps: number;
-      weight: number;
-      unit: string;
-    }[];
+    sets: SetRow[];
   };
 }) {
   const removeSet = useMutation(api.workouts.removeSet);
@@ -160,9 +116,17 @@ function WorkoutCard({
         }
       />
 
-      {workout.volume > 0 ? (
-        <Badge tone="terracotta">{workout.volume.toLocaleString()} lb volume</Badge>
-      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {workout.volume > 0 ? (
+          <Badge tone="terracotta">{workout.volume.toLocaleString()} lb volume</Badge>
+        ) : null}
+        {workout.timeSec > 0 ? (
+          <Badge tone="sage">
+            <Timer className="size-3" />
+            {formatDuration(workout.timeSec)} under tension
+          </Badge>
+        ) : null}
+      </div>
 
       {workout.sets.length === 0 ? (
         <p className="text-sm text-ink-muted">No sets yet — add the first one below.</p>
@@ -175,9 +139,9 @@ function WorkoutCard({
             >
               <span className="w-5 shrink-0 text-xs font-semibold text-ink-faint">{i + 1}</span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{set.exercise}</span>
-              <span className="shrink-0 text-sm text-ink-muted">
-                {set.reps} × {set.weight}
-                {set.unit}
+              <span className="flex shrink-0 items-center gap-1 text-sm text-ink-muted">
+                {set.kind === "time" ? <Timer className="size-3 text-ink-faint" /> : null}
+                {setLabel(set)}
               </span>
               <button
                 type="button"
@@ -193,6 +157,62 @@ function WorkoutCard({
       )}
 
       <SetForm workoutId={workout._id} />
+    </Card>
+  );
+}
+
+/**
+ * What the split says you're doing today, if you haven't started it yet.
+ * One tap turns the plan into a real session.
+ */
+function TodaysPlan({ date, startedNames }: { date: string; startedNames: string[] }) {
+  const rules = useQuery(api.recurrences.list);
+  const create = useMutation(api.workouts.create);
+  const [starting, setStarting] = useState<string | null>(null);
+
+  const weekday = fromDateKey(date).getDay();
+  const started = new Set(startedNames.map((n) => n.toLowerCase()));
+  const planned = (rules ?? []).filter(
+    (rule) =>
+      rule.tool === "workouts" &&
+      rule.byDay.includes(weekday) &&
+      !started.has(rule.title.toLowerCase())
+  );
+
+  if (planned.length === 0) return null;
+
+  return (
+    <Card className="space-y-3 p-5">
+      <CardHead label="Planned today" icon={Play} accent={ACCENT} />
+      <ul className="space-y-2">
+        {planned.map((rule) => (
+          <li
+            key={rule._id}
+            className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-2.5"
+          >
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">{rule.title}</span>
+            <Button
+              size="sm"
+              disabled={starting === rule._id}
+              onClick={async () => {
+                setStarting(rule._id);
+                try {
+                  // No repeat flag here — the rule already exists, and passing
+                  // it would try to create a duplicate of itself.
+                  await create({ date, name: rule.title });
+                  toast.success(`${rule.title} started`);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not start that");
+                } finally {
+                  setStarting(null);
+                }
+              }}
+            >
+              {starting === rule._id ? "Starting…" : "Start"}
+            </Button>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
@@ -303,7 +323,7 @@ export function WorkoutsView() {
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">Repeat weekly</span>
                   <span className="block text-xs text-ink-faint">
-                    Shows on every {format(fromDateKey(date), "EEEE")} as planned.
+                    Every {format(fromDateKey(date), "EEEE")}. Edit days in the split below.
                   </span>
                 </span>
                 <Switch checked={repeat} onCheckedChange={setRepeat} />
@@ -317,6 +337,8 @@ export function WorkoutsView() {
         </Dialog>
       </header>
 
+      <TodaysPlan date={date} startedNames={(today ?? []).map((w) => w.name)} />
+
       {today === undefined ? (
         <Skeleton className="h-40 w-full rounded-card" />
       ) : today.length === 0 ? (
@@ -324,12 +346,14 @@ export function WorkoutsView() {
           <EmptyState
             icon={Dumbbell}
             title="Nothing logged today"
-            body="Start a session and add sets as you go. Exercise names autocomplete from your own history."
+            body="Start a session and add sets as you go — reps and weight, or a time for anything you hold or run."
           />
         </Card>
       ) : (
         today.map((workout) => <WorkoutCard key={workout._id} workout={workout} />)
       )}
+
+      <WeeklySplit />
 
       <WorkoutHistory />
 

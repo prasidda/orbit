@@ -46,6 +46,29 @@ export const create = mutation({
   },
 });
 
+/**
+ * Toggle which weekdays a rule fires on.
+ *
+ * Clearing every day deletes the rule rather than leaving a rule that can
+ * never fire — an invisible row that silently does nothing is worse than no
+ * row at all.
+ */
+export const setDays = mutation({
+  args: { recurrenceId: v.id("recurrences"), byDay: v.array(v.number()) },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const row = await ctx.db.get(args.recurrenceId);
+    if (!row || row.userId !== me._id) throw new Error("Not found");
+
+    const byDay = [...new Set(args.byDay.filter((d) => d >= 0 && d <= 6))].sort();
+    if (byDay.length === 0) {
+      await ctx.db.delete(row._id);
+      return;
+    }
+    await ctx.db.patch(row._id, { byDay });
+  },
+});
+
 export const remove = mutation({
   args: { recurrenceId: v.id("recurrences") },
   handler: async (ctx, args) => {

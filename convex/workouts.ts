@@ -8,10 +8,20 @@ async function withSets(ctx: Ctx, workout: Doc<"workouts">) {
     .query("workoutSets")
     .withIndex("by_workout", (q) => q.eq("workoutId", workout._id))
     .collect();
+
+  // Only reps sets carry volume; a 60-second plank has no meaningful
+  // reps × weight. Time sets are summed separately instead.
+  const volume = sets.reduce(
+    (sum, s) => (s.kind === "time" ? sum : sum + (s.reps ?? 0) * (s.weight ?? 0)),
+    0
+  );
+  const timeSec = sets.reduce((sum, s) => sum + (s.durationSec ?? 0), 0);
+
   return {
     ...workout,
     sets: sets.sort((a, b) => a.order - b.order),
-    volume: sets.reduce((sum, s) => sum + s.reps * s.weight, 0),
+    volume,
+    timeSec,
   };
 }
 
@@ -136,27 +146,48 @@ export const addSet = mutation({
   args: {
     workoutId: v.id("workouts"),
     exercise: v.string(),
-    reps: v.number(),
-    weight: v.number(),
-    unit: v.union(v.literal("kg"), v.literal("lb")),
+    kind: v.union(v.literal("reps"), v.literal("time")),
+    // reps sets
+    reps: v.optional(v.number()),
+    weight: v.optional(v.number()),
+    unit: v.optional(v.union(v.literal("kg"), v.literal("lb"))),
+    // time sets
+    durationSec: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const me = await requireUser(ctx);
     const workout = await ctx.db.get(args.workoutId);
     if (!workout || workout.userId !== me._id) throw new Error("Not found");
 
+    const exercise = args.exercise.trim();
+    if (!exercise) throw new Error("Name the exercise");
+
     const existing = await ctx.db
       .query("workoutSets")
       .withIndex("by_workout", (q) => q.eq("workoutId", workout._id))
       .collect();
 
+    if (args.kind === "time") {
+      const durationSec = Math.round(args.durationSec ?? 0);
+      if (durationSec <= 0) throw new Error("How long did it take?");
+      return await ctx.db.insert("workoutSets", {
+        userId: me._id,
+        workoutId: workout._id,
+        exercise,
+        kind: "time",
+        durationSec,
+        order: existing.length,
+      });
+    }
+
     return await ctx.db.insert("workoutSets", {
       userId: me._id,
       workoutId: workout._id,
-      exercise: args.exercise.trim(),
-      reps: Math.max(1, Math.round(args.reps)),
-      weight: Math.max(0, args.weight),
-      unit: args.unit,
+      exercise,
+      kind: "reps",
+      reps: Math.max(1, Math.round(args.reps ?? 1)),
+      weight: Math.max(0, args.weight ?? 0),
+      unit: args.unit ?? "lb",
       order: existing.length,
     });
   },

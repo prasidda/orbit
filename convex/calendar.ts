@@ -195,7 +195,13 @@ export const range = query({
 export type DaySummary = {
   date: string;
   water: { totalMl: number; goalMl: number; logCount: number };
-  workouts: { id: Id<"workouts">; name: string; setCount: number; volume: number }[];
+  workouts: {
+    id: Id<"workouts">;
+    name: string;
+    setCount: number;
+    volume: number;
+    timeSec: number;
+  }[];
   planned: { id: string; tool: "workouts" | "calendar"; title: string; startMin?: number }[];
   due: { id: Id<"assignments">; title: string; course?: string; status: string }[];
   finished: { id: Id<"assignments">; title: string; course?: string }[];
@@ -237,7 +243,12 @@ export const day = query({
         id: workout._id,
         name: workout.name,
         setCount: sets.length,
-        volume: sets.reduce((sum, s) => sum + s.reps * s.weight, 0),
+        // Time sets have no reps × weight, so they only count toward timeSec.
+        volume: sets.reduce(
+          (sum, s) => (s.kind === "time" ? sum : sum + (s.reps ?? 0) * (s.weight ?? 0)),
+          0
+        ),
+        timeSec: sets.reduce((sum, s) => sum + (s.durationSec ?? 0), 0),
       });
     }
 

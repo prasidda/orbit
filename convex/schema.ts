@@ -73,13 +73,22 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
   }).index("by_user_date", ["userId", "date"]),
 
+  /**
+   * A set is either reps-and-weight (bench, squats) or a duration (plank,
+   * treadmill, stretching). `kind` picks which fields matter.
+   *
+   * Every field but `exercise` and `order` is optional so rows written before
+   * time tracking existed still validate — an absent `kind` reads as "reps".
+   */
   workoutSets: defineTable({
     userId: v.id("users"),
     workoutId: v.id("workouts"),
     exercise: v.string(),
-    reps: v.number(),
-    weight: v.number(),
-    unit: v.union(v.literal("kg"), v.literal("lb")),
+    kind: v.optional(v.union(v.literal("reps"), v.literal("time"))),
+    reps: v.optional(v.number()),
+    weight: v.optional(v.number()),
+    unit: v.optional(v.union(v.literal("kg"), v.literal("lb"))),
+    durationSec: v.optional(v.number()),
     order: v.number(),
   })
     .index("by_workout", ["workoutId", "order"])

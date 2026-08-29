@@ -5,6 +5,7 @@ import { BookOpen, CalendarDays, Check, Droplet, Dumbbell, Repeat } from "lucide
 import { api } from "../../../convex/_generated/api";
 import { todayKey } from "@/lib/dates";
 import { formatCups } from "@/lib/units";
+import { formatDuration } from "@/lib/duration";
 import { TOOL_BY_KEY } from "@/tools/registry";
 import { Ring } from "@/tools/water/ring";
 import { Badge } from "@/components/ui/badge";
@@ -150,9 +151,13 @@ export function DayPanel({ date }: { date: string }) {
               <Line
                 key={workout.id}
                 title={workout.name}
-                detail={`${workout.setCount} set${workout.setCount === 1 ? "" : "s"}${
-                  workout.volume > 0 ? ` · ${workout.volume.toLocaleString()} lb` : ""
-                }`}
+                detail={[
+                  `${workout.setCount} set${workout.setCount === 1 ? "" : "s"}`,
+                  workout.volume > 0 ? `${workout.volume.toLocaleString()} lb` : null,
+                  workout.timeSec > 0 ? formatDuration(workout.timeSec) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               />
             ))}
           </div>
