@@ -176,6 +176,46 @@ export const create = mutation({
   },
 });
 
+/**
+ * Delete a session entirely: its schedule and every day it was logged.
+ *
+ * Deleting one day's row from the session page leaves the weekly repeat
+ * alone, which is right there but leaves no way to get rid of a session you
+ * never logged — those had no row to open in the first place.
+ */
+export const removeSession = mutation({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const target = args.name.trim().toLowerCase();
+    if (!target) throw new Error("Not found");
+
+    const rules = await ctx.db
+      .query("recurrences")
+      .withIndex("by_user", (q) => q.eq("userId", me._id))
+      .collect();
+    for (const rule of rules) {
+      if (rule.tool === "workouts" && rule.title.toLowerCase() === target) {
+        await ctx.db.delete(rule._id);
+      }
+    }
+
+    const workouts = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_date", (q) => q.eq("userId", me._id))
+      .collect();
+    for (const workout of workouts) {
+      if (workout.name.toLowerCase() !== target) continue;
+      const sets = await ctx.db
+        .query("workoutSets")
+        .withIndex("by_workout", (q) => q.eq("workoutId", workout._id))
+        .collect();
+      for (const set of sets) await ctx.db.delete(set._id);
+      await ctx.db.delete(workout._id);
+    }
+  },
+});
+
 /** One session, with everything its own page needs. */
 export const get = query({
   args: { workoutId: v.id("workouts") },
@@ -265,18 +305,23 @@ export const sessionIndex = query({
       .query("workouts")
       .withIndex("by_user_date", (q) => q.eq("userId", me._id))
       .order("desc")
-      .take(200);
+      .collect();
 
     type Entry = {
       name: string;
       byDay: number[];
+      loggedCount: number;
       lastWorkoutId?: Id<"workouts">;
       lastDate?: string;
     };
     const byName = new Map<string, Entry>();
 
     for (const rule of rules) {
-      byName.set(rule.title.toLowerCase(), { name: rule.title, byDay: rule.byDay });
+      byName.set(rule.title.toLowerCase(), {
+        name: rule.title,
+        byDay: rule.byDay,
+        loggedCount: 0,
+      });
     }
 
     for (const workout of workouts) {
@@ -286,12 +331,16 @@ export const sessionIndex = query({
         byName.set(key, {
           name: workout.name,
           byDay: [],
+          loggedCount: 1,
           lastWorkoutId: workout._id,
           lastDate: workout.date,
         });
-      } else if (!existing.lastWorkoutId || workout.date > (existing.lastDate ?? "")) {
-        existing.lastWorkoutId = workout._id;
-        existing.lastDate = workout.date;
+      } else {
+        existing.loggedCount += 1;
+        if (!existing.lastWorkoutId || workout.date > (existing.lastDate ?? "")) {
+          existing.lastWorkoutId = workout._id;
+          existing.lastDate = workout.date;
+        }
       }
     }
 

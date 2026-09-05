@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Route } from "next";
 import { useMutation, useQuery } from "convex/react";
-import { ChevronRight, Clock, Dumbbell, Plus, Timer } from "lucide-react";
+import { ChevronRight, Clock, Dumbbell, Plus, Timer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -235,6 +235,63 @@ function TodayCard({ date }: { date: string }) {
   );
 }
 
+/**
+ * Deleting a session takes its schedule and every day it was logged, so it
+ * confirms and says exactly how much is going.
+ */
+function DeleteSession({ name, loggedCount }: { name: string; loggedCount: number }) {
+  const removeSession = useMutation(api.workouts.removeSession);
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Delete ${name}`}
+          className="grid size-8 shrink-0 place-items-center rounded-full text-ink-faint transition-colors hover:bg-danger-soft hover:text-danger"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </DialogTrigger>
+      <DialogContent
+        title={`Delete ${name}?`}
+        description={
+          loggedCount > 0
+            ? `This removes its schedule and ${loggedCount} logged session${loggedCount === 1 ? "" : "s"}, with their exercises. It can't be undone.`
+            : "This removes it from your weekly schedule."
+        }
+      >
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1" onClick={() => setOpen(false)}>
+            Keep
+          </Button>
+          <Button
+            variant="danger"
+            className="flex-1"
+            disabled={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              try {
+                await removeSession({ name });
+                setOpen(false);
+                toast(`${name} deleted`);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not delete that");
+              } finally {
+                setDeleting(false);
+              }
+            }}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** The week at a glance, plus a way into every session you have. */
 function SessionList() {
   const sessions = useQuery(api.workouts.sessionIndex);
@@ -292,33 +349,41 @@ function SessionList() {
       ) : null}
 
       <ul className="space-y-2">
-        {sessions.map((session) =>
-          session.lastWorkoutId ? (
-            <SessionRow
-              key={session.name}
-              title={session.name}
-              href={sessionHref(session.lastWorkoutId)}
-              detail={[
-                session.byDay.length > 0 ? describeDays(session.byDay) : "doesn't repeat",
-                session.lastDate ? `last ${formatDayShort(session.lastDate)}` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            />
-          ) : (
-            <li
-              key={session.name}
-              className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-3"
-            >
-              <div className="min-w-0 flex-1">
+        {sessions.map((session) => (
+          <li
+            key={session.name}
+            className="flex items-center gap-2 rounded-tile bg-surface-sunk pr-2 transition-colors hover:bg-[color:var(--surface)]"
+          >
+            {session.lastWorkoutId ? (
+              <Link
+                href={sessionHref(session.lastWorkoutId)}
+                className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{session.name}</p>
+                  <p className="truncate text-xs text-ink-faint">
+                    {[
+                      session.byDay.length > 0 ? describeDays(session.byDay) : "doesn't repeat",
+                      session.lastDate ? `last ${formatDayShort(session.lastDate)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-ink-faint" />
+              </Link>
+            ) : (
+              <div className="min-w-0 flex-1 px-3 py-3">
                 <p className="truncate text-sm font-semibold">{session.name}</p>
                 <p className="truncate text-xs text-ink-faint">
                   {describeDays(session.byDay)} · not done yet
                 </p>
               </div>
-            </li>
-          )
-        )}
+            )}
+
+            <DeleteSession name={session.name} loggedCount={session.loggedCount} />
+          </li>
+        ))}
       </ul>
     </Card>
   );

@@ -144,12 +144,12 @@ export function CalendarView() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <header className="flex items-end justify-between gap-3">
+      {/* Stacked on phones: "September 2026" plus three controls doesn't fit
+          on one line in portrait, and truncating clipped the month name. */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-0.5">
           <p className="eyebrow">Calendar</p>
-          <h1 className="truncate font-display text-3xl sm:text-4xl">
-            {format(month, "MMMM yyyy")}
-          </h1>
+          <h1 className="font-display text-3xl sm:text-4xl">{format(month, "MMMM yyyy")}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button

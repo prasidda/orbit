@@ -1,7 +1,17 @@
 "use client";
 
+import Link from "next/link";
+import type { Route } from "next";
 import { useMutation, useQuery } from "convex/react";
-import { BookOpen, CalendarDays, Check, Droplet, Dumbbell, Repeat } from "lucide-react";
+import {
+  BookOpen,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Droplet,
+  Dumbbell,
+  Repeat,
+} from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { todayKey } from "@/lib/dates";
 import { formatCups } from "@/lib/units";
@@ -44,6 +54,12 @@ function Section({
   );
 }
 
+/**
+ * A row in the day panel. With `href` the body becomes a link into the tool
+ * that owns it, so the calendar is a way into your data rather than a
+ * read-only summary of it. The checkbox stays outside the link — tapping
+ * "done" shouldn't navigate away.
+ */
 function Line({
   title,
   detail,
@@ -51,6 +67,7 @@ function Line({
   muted,
   onToggle,
   checked,
+  href,
 }: {
   title: string;
   detail?: string | null;
@@ -58,9 +75,24 @@ function Line({
   muted?: boolean;
   onToggle?: () => void;
   checked?: boolean;
+  href?: Route;
 }) {
+  const text = (
+    <div className="min-w-0 flex-1">
+      <p className={cn("truncate text-sm font-medium", muted && "text-ink-faint line-through")}>
+        {title}
+      </p>
+      {detail ? <p className="truncate text-xs text-ink-faint">{detail}</p> : null}
+    </div>
+  );
+
   return (
-    <div className="flex items-center gap-2.5 rounded-tile bg-surface-sunk px-3 py-2">
+    <div
+      className={cn(
+        "flex items-center gap-2.5 rounded-tile bg-surface-sunk px-3 py-2",
+        href && "transition-colors hover:bg-[color:var(--surface)]"
+      )}
+    >
       {onToggle ? (
         <button
           type="button"
@@ -74,12 +106,16 @@ function Line({
           {checked ? <Check className="size-2.5" /> : null}
         </button>
       ) : null}
-      <div className="min-w-0 flex-1">
-        <p className={cn("truncate text-sm font-medium", muted && "text-ink-faint line-through")}>
-          {title}
-        </p>
-        {detail ? <p className="truncate text-xs text-ink-faint">{detail}</p> : null}
-      </div>
+
+      {href ? (
+        <Link href={href} className="flex min-w-0 flex-1 items-center gap-2">
+          {text}
+          <ChevronRight className="size-4 shrink-0 text-ink-faint" />
+        </Link>
+      ) : (
+        text
+      )}
+
       {trailing}
     </div>
   );
@@ -127,7 +163,10 @@ export function DayPanel({ date }: { date: string }) {
       {/* Water always shows once anything was logged — progress is the point. */}
       {water.logCount > 0 ? (
         <Section label="Water" icon={Droplet} accent={TOOL_BY_KEY.water.accent}>
-          <div className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-2.5">
+          <Link
+            href={"/water" as Route}
+            className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-2.5 transition-colors hover:bg-[color:var(--surface)]"
+          >
             <Ring value={water.totalMl} goal={water.goalMl} size={44} stroke={5}>
               <span className="text-[0.5625rem] font-bold">{Math.round(waterPct * 100)}%</span>
             </Ring>
@@ -140,7 +179,8 @@ export function DayPanel({ date }: { date: string }) {
                 {water.totalMl >= water.goalMl ? " · goal met" : ""}
               </p>
             </div>
-          </div>
+            <ChevronRight className="size-4 shrink-0 text-ink-faint" />
+          </Link>
         </Section>
       ) : null}
 
@@ -150,7 +190,11 @@ export function DayPanel({ date }: { date: string }) {
             {workouts.map((workout) => (
               /* The session is the heading and its exercises sit under it —
                  "3 sets" alone never told you what you actually did. */
-              <div key={workout.id} className="rounded-tile bg-surface-sunk px-3 py-2.5">
+              <Link
+                key={workout.id}
+                href={`/workouts/${workout.id}` as Route}
+                className="block rounded-tile bg-surface-sunk px-3 py-2.5 transition-colors hover:bg-[color:var(--surface)]"
+              >
                 <div className="flex items-baseline gap-2">
                   <p className="min-w-0 flex-1 truncate text-sm font-semibold">{workout.name}</p>
                   <p className="shrink-0 text-xs text-ink-faint">
@@ -181,7 +225,7 @@ export function DayPanel({ date }: { date: string }) {
                 ) : (
                   <p className="mt-1 text-xs text-ink-faint">No sets logged.</p>
                 )}
-              </div>
+              </Link>
             ))}
           </div>
         </Section>
@@ -195,6 +239,7 @@ export function DayPanel({ date }: { date: string }) {
                 key={item.id}
                 title={item.title}
                 detail={minutesToLabel(item.startMin) ?? "repeats weekly"}
+                href={(item.tool === "workouts" ? "/workouts" : "/calendar") as Route}
                 trailing={<Badge tone="outline">planned</Badge>}
               />
             ))}
@@ -238,6 +283,7 @@ export function DayPanel({ date }: { date: string }) {
                 detail={item.course}
                 checked={item.status === "done"}
                 muted={item.status === "done"}
+                href={"/classwork" as Route}
                 onToggle={() =>
                   setStatus({
                     assignmentId: item.id,
@@ -255,7 +301,13 @@ export function DayPanel({ date }: { date: string }) {
         <Section label="Finished this day" icon={Check} accent="var(--sage)">
           <div className="space-y-1.5">
             {finished.map((item) => (
-              <Line key={item.id} title={item.title} detail={item.course} muted />
+              <Line
+                key={item.id}
+                title={item.title}
+                detail={item.course}
+                href={"/classwork" as Route}
+                muted
+              />
             ))}
           </div>
         </Section>
