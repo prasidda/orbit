@@ -1,12 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import type { Route } from "next";
 import { useMutation, useQuery } from "convex/react";
-import { Clock, Dumbbell, Play, Plus, Timer, Trash2 } from "lucide-react";
+import { ChevronRight, Clock, Dumbbell, Plus, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { todayKey, shiftKey, formatDayShort, fromDateKey } from "@/lib/dates";
+import { todayKey, formatDayShort, fromDateKey } from "@/lib/dates";
+import { formatDuration } from "@/lib/duration";
 import { Card, CardHead } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,150 +18,12 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, Skeleton } from "@/components/ui/states";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { HistoryChart, RangePicker, useHistoryRange } from "@/components/history-chart";
-import { SetForm } from "./set-form";
-import { formatDuration } from "@/lib/duration";
-import { DayToggles, describeDays } from "./day-toggles";
-import { SessionSchedule } from "./session-schedule";
+import { DAYS, DayToggles, describeDays } from "./day-toggles";
+import { cn } from "@/lib/utils";
 
 const ACCENT = "var(--tool-workouts)";
 
-type SetRow = {
-  _id: Id<"workoutSets">;
-  exercise: string;
-  kind?: "reps" | "time";
-  reps?: number;
-  weight?: number;
-  unit?: string;
-  durationSec?: number;
-};
-
-/** Minutes for the session — the number the history chart is built from. */
-function DurationField({
-  workoutId,
-  durationMin,
-}: {
-  workoutId: Id<"workouts">;
-  durationMin?: number;
-}) {
-  const setDuration = useMutation(api.workouts.setDuration);
-  const [draft, setDraft] = useState<string | null>(null);
-
-  const commit = async () => {
-    if (draft === null) return;
-    const minutes = Number(draft);
-    setDraft(null);
-    if (!Number.isFinite(minutes) || minutes < 0) return;
-    await setDuration({ workoutId, durationMin: minutes });
-  };
-
-  return (
-    <label className="flex items-center gap-1.5 text-xs text-ink-faint">
-      <Clock className="size-3.5" />
-      <input
-        inputMode="numeric"
-        placeholder="—"
-        value={draft ?? (durationMin !== undefined ? String(durationMin) : "")}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        className="w-10 rounded-md bg-transparent text-center text-base text-ink outline-none focus:bg-surface-sunk sm:text-xs"
-      />
-      min
-    </label>
-  );
-}
-
-function setLabel(set: SetRow): string {
-  if (set.kind === "time") return formatDuration(set.durationSec ?? 0);
-  return `${set.reps ?? 0} × ${set.weight ?? 0}${set.unit ?? "lb"}`;
-}
-
-function WorkoutCard({
-  workout,
-}: {
-  workout: {
-    _id: Id<"workouts">;
-    name: string;
-    date: string;
-    volume: number;
-    timeSec: number;
-    durationMin?: number;
-    sets: SetRow[];
-  };
-}) {
-  const removeSet = useMutation(api.workouts.removeSet);
-  const removeWorkout = useMutation(api.workouts.remove);
-
-  return (
-    <Card className="space-y-3 p-5">
-      <CardHead
-        label={workout.name}
-        icon={Dumbbell}
-        accent={ACCENT}
-        trailing={
-          <div className="flex items-center gap-2">
-            <DurationField workoutId={workout._id} durationMin={workout.durationMin} />
-            <button
-              type="button"
-              aria-label="Delete session"
-              onClick={async () => {
-                await removeWorkout({ workoutId: workout._id });
-                toast("Session deleted");
-              }}
-              className="grid size-7 place-items-center rounded-full text-ink-faint transition-colors hover:bg-danger-soft hover:text-danger"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          </div>
-        }
-      />
-
-      <div className="flex flex-wrap gap-2">
-        {workout.volume > 0 ? (
-          <Badge tone="terracotta">{workout.volume.toLocaleString()} lb volume</Badge>
-        ) : null}
-        {workout.timeSec > 0 ? (
-          <Badge tone="sage">
-            <Timer className="size-3" />
-            {formatDuration(workout.timeSec)}
-          </Badge>
-        ) : null}
-      </div>
-
-      {workout.sets.length === 0 ? (
-        <p className="text-sm text-ink-muted">No sets yet — add the first one below.</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {workout.sets.map((set, i) => (
-            <li
-              key={set._id}
-              className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-2"
-            >
-              <span className="w-5 shrink-0 text-xs font-semibold text-ink-faint">{i + 1}</span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{set.exercise}</span>
-              <span className="flex shrink-0 items-center gap-1 text-sm text-ink-muted">
-                {set.kind === "time" ? <Timer className="size-3 text-ink-faint" /> : null}
-                {setLabel(set)}
-              </span>
-              <button
-                type="button"
-                aria-label="Remove set"
-                onClick={() => removeSet({ setId: set._id })}
-                className="grid size-7 shrink-0 place-items-center rounded-full text-ink-faint transition-colors hover:bg-danger-soft hover:text-danger"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <SetForm workoutId={workout._id} />
-    </Card>
-  );
-}
+const sessionHref = (id: Id<"workouts">) => `/workouts/${id}` as Route;
 
 /**
  * One dialog for both halves of the same thought: what the session is, and
@@ -165,6 +31,7 @@ function WorkoutCard({
  */
 function NewSession({ date }: { date: string }) {
   const create = useMutation(api.workouts.create);
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -189,17 +56,13 @@ function NewSession({ date }: { date: string }) {
             if (!name.trim() || saving) return;
             setSaving(true);
             try {
-              await create({ date, name, repeatDays: days });
+              // Always create today's row so there's somewhere to put
+              // exercises straight away, even if the schedule starts later.
+              const id = await create({ date, name, repeatDays: days, startNow: true });
               setName("");
               setDays([]);
               setOpen(false);
-              toast.success(
-                days.length === 0
-                  ? "Session started"
-                  : landsToday
-                    ? "Session started, and it repeats"
-                    : "Added to your week"
-              );
+              if (id) router.push(sessionHref(id));
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Could not save that");
             } finally {
@@ -227,15 +90,15 @@ function NewSession({ date }: { date: string }) {
             />
             <p className="text-xs text-ink-faint">
               {days.length === 0
-                ? "No days picked — just a one-off today."
+                ? "Doesn't repeat — just today."
                 : landsToday
-                  ? `${describeDays(days)} — starting today.`
-                  : `${describeDays(days)} — nothing logged today.`}
+                  ? `${describeDays(days)}.`
+                  : `${describeDays(days)}, and you can fill it in now.`}
             </p>
           </div>
 
           <Button type="submit" className="w-full" disabled={saving || !name.trim()}>
-            {saving ? "Saving…" : days.length === 0 ? "Start" : "Save"}
+            {saving ? "Creating…" : "Create and open"}
           </Button>
         </form>
       </DialogContent>
@@ -243,36 +106,220 @@ function NewSession({ date }: { date: string }) {
   );
 }
 
-/** A scheduled session you haven't started — one tap makes it real. */
-function PlannedRow({ date, title }: { date: string; title: string }) {
-  const create = useMutation(api.workouts.create);
-  const [starting, setStarting] = useState(false);
-
-  return (
-    <Card className="flex items-center gap-3 p-4">
-      <Play className="size-4 shrink-0" style={{ color: ACCENT }} />
+/** A row in the overview. Tapping it opens the session's own page. */
+function SessionRow({
+  title,
+  detail,
+  href,
+  onStart,
+  starting,
+}: {
+  title: string;
+  detail: string;
+  href?: Route;
+  onStart?: () => void;
+  starting?: boolean;
+}) {
+  const body = (
+    <>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{title}</p>
-        <p className="text-xs text-ink-faint">on your schedule for today</p>
+        <p className="truncate text-xs text-ink-faint">{detail}</p>
       </div>
-      <Button
-        size="sm"
-        disabled={starting}
-        onClick={async () => {
-          setStarting(true);
-          try {
-            // startNow because the rule already exists; this only adds the row.
-            await create({ date, name: title, startNow: true });
-            toast.success(`${title} started`);
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Could not start that");
-          } finally {
-            setStarting(false);
-          }
-        }}
-      >
-        {starting ? "Starting…" : "Start"}
-      </Button>
+      {onStart ? (
+        <Button size="sm" disabled={starting} onClick={onStart}>
+          {starting ? "Starting…" : "Start"}
+        </Button>
+      ) : (
+        <ChevronRight className="size-4 shrink-0 text-ink-faint" />
+      )}
+    </>
+  );
+
+  const className =
+    "flex w-full items-center gap-3 rounded-tile bg-surface-sunk px-3 py-3 text-left transition-colors hover:bg-[color:var(--surface)]";
+
+  if (href && !onStart) {
+    return (
+      <li>
+        <Link href={href} className={className}>
+          {body}
+        </Link>
+      </li>
+    );
+  }
+  return <li className={className}>{body}</li>;
+}
+
+function TodayCard({ date }: { date: string }) {
+  const today = useQuery(api.workouts.day, { date });
+  const rules = useQuery(api.recurrences.list);
+  const create = useMutation(api.workouts.create);
+  const router = useRouter();
+  const [starting, setStarting] = useState<string | null>(null);
+
+  const weekday = fromDateKey(date).getDay();
+  const logged = today ?? [];
+  const loggedNames = new Set(logged.map((w) => w.name.toLowerCase()));
+  const planned = (rules ?? []).filter(
+    (rule) =>
+      rule.tool === "workouts" &&
+      rule.byDay.includes(weekday) &&
+      !loggedNames.has(rule.title.toLowerCase())
+  );
+
+  if (today === undefined) return <Skeleton className="h-32 w-full rounded-card" />;
+
+  if (logged.length === 0 && planned.length === 0) {
+    return (
+      <Card className="p-2">
+        <EmptyState
+          icon={Dumbbell}
+          title="Nothing on for today"
+          body="Add a session and pick the days it repeats. Open it any time to fill in what you did."
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <CardHead label="Today" icon={Dumbbell} accent={ACCENT} />
+      <ul className="space-y-2">
+        {planned.map((rule) => (
+          <SessionRow
+            key={rule._id}
+            title={rule.title}
+            detail="on your schedule for today"
+            starting={starting === rule._id}
+            onStart={async () => {
+              setStarting(rule._id);
+              try {
+                // copyLast brings the exercises across, so a weekly session
+                // doesn't start from an empty list every time.
+                const id = await create({
+                  date,
+                  name: rule.title,
+                  startNow: true,
+                  copyLast: true,
+                });
+                if (id) router.push(sessionHref(id));
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not start that");
+              } finally {
+                setStarting(null);
+              }
+            }}
+          />
+        ))}
+
+        {logged.map((workout) => (
+          <SessionRow
+            key={workout._id}
+            title={workout.name}
+            href={sessionHref(workout._id)}
+            detail={
+              [
+                `${workout.sets.length} set${workout.sets.length === 1 ? "" : "s"}`,
+                workout.volume > 0 ? `${workout.volume.toLocaleString()} lb` : null,
+                workout.timeSec > 0 ? formatDuration(workout.timeSec) : null,
+                workout.durationMin ? `${workout.durationMin} min` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "nothing logged yet"
+            }
+          />
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+/** The week at a glance, plus a way into every session you have. */
+function SessionList() {
+  const sessions = useQuery(api.workouts.sessionIndex);
+  const todayWeekday = fromDateKey(todayKey()).getDay();
+
+  if (sessions === undefined) return <Skeleton className="h-40 w-full rounded-card" />;
+  if (sessions.length === 0) return null;
+
+  const repeating = sessions.filter((s) => s.byDay.length > 0);
+
+  return (
+    <Card className="space-y-4 p-5">
+      <CardHead label="Your sessions" icon={Dumbbell} accent={ACCENT} />
+
+      {repeating.length > 0 ? (
+        <ul className="grid grid-cols-7 gap-1">
+          {DAYS.map((day, index) => {
+            const onThisDay = repeating.filter((s) => s.byDay.includes(index));
+            const isToday = index === todayWeekday;
+            return (
+              <li
+                key={index}
+                className={cn(
+                  "min-h-14 rounded-tile px-1 py-1.5 text-center",
+                  isToday ? "bg-terracotta-soft" : "bg-surface-sunk"
+                )}
+              >
+                <p
+                  className={cn(
+                    "text-[0.625rem] font-bold uppercase",
+                    isToday ? "text-terracotta-ink" : "text-ink-faint"
+                  )}
+                >
+                  {day.short}
+                </p>
+                <div className="mt-1 space-y-0.5">
+                  {onThisDay.length === 0 ? (
+                    <span className="text-[0.625rem] text-ink-faint">rest</span>
+                  ) : (
+                    onThisDay.map((s) => (
+                      <p
+                        key={s.name}
+                        title={s.name}
+                        className="truncate text-[0.625rem] font-medium leading-tight"
+                      >
+                        {s.name}
+                      </p>
+                    ))
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      <ul className="space-y-2">
+        {sessions.map((session) =>
+          session.lastWorkoutId ? (
+            <SessionRow
+              key={session.name}
+              title={session.name}
+              href={sessionHref(session.lastWorkoutId)}
+              detail={[
+                session.byDay.length > 0 ? describeDays(session.byDay) : "doesn't repeat",
+                session.lastDate ? `last ${formatDayShort(session.lastDate)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            />
+          ) : (
+            <li
+              key={session.name}
+              className="flex items-center gap-3 rounded-tile bg-surface-sunk px-3 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{session.name}</p>
+                <p className="truncate text-xs text-ink-faint">
+                  {describeDays(session.byDay)} · not done yet
+                </p>
+              </div>
+            </li>
+          )
+        )}
+      </ul>
     </Card>
   );
 }
@@ -300,19 +347,16 @@ function WorkoutHistory() {
             to={to}
             accent={ACCENT}
             formatValue={(min) => `${min} min`}
-            emptyLabel="No timed sessions in this stretch — add minutes to a session and it'll show here."
+            emptyLabel="No timed sessions in this stretch — open a session and add its minutes."
           />
-
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="neutral">
               {history.sessionCount} session{history.sessionCount === 1 ? "" : "s"}
             </Badge>
             <Badge tone="neutral">
-              {history.days.reduce((sum, d) => sum + d.minutes, 0)} min total
+              <Timer className="size-3" />
+              {history.days.reduce((sum, d) => sum + d.minutes, 0)} min
             </Badge>
-            {history.untimed > 0 ? (
-              <Badge tone="outline">{history.untimed} without minutes</Badge>
-            ) : null}
           </div>
         </>
       )}
@@ -322,76 +366,20 @@ function WorkoutHistory() {
 
 export function WorkoutsView() {
   const date = todayKey();
-  const today = useQuery(api.workouts.day, { date });
-  const rules = useQuery(api.recurrences.list);
-  const recent = useQuery(api.workouts.history, {
-    from: shiftKey(date, -30),
-    to: shiftKey(date, -1),
-  });
-
-  const weekday = fromDateKey(date).getDay();
-  const started = new Set((today ?? []).map((w) => w.name.toLowerCase()));
-  const plannedToday = (rules ?? []).filter(
-    (rule) =>
-      rule.tool === "workouts" &&
-      rule.byDay.includes(weekday) &&
-      !started.has(rule.title.toLowerCase())
-  );
-
-  const nothingToday = today !== undefined && today.length === 0 && plannedToday.length === 0;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto max-w-3xl space-y-4">
       <header className="flex items-end justify-between gap-3">
         <div className="min-w-0 space-y-0.5">
           <p className="eyebrow">Workouts</p>
-          <h1 className="font-display text-3xl sm:text-4xl">Today&rsquo;s training</h1>
+          <h1 className="font-display text-3xl sm:text-4xl">Training</h1>
         </div>
         <NewSession date={date} />
       </header>
 
-      {today === undefined ? (
-        <Skeleton className="h-40 w-full rounded-card" />
-      ) : nothingToday ? (
-        <Card className="p-2">
-          <EmptyState
-            icon={Dumbbell}
-            title="Nothing on for today"
-            body="Add a session and pick the days it repeats — reps and weight, or a time for anything you hold or run."
-          />
-        </Card>
-      ) : (
-        <>
-          {plannedToday.map((rule) => (
-            <PlannedRow key={rule._id} date={date} title={rule.title} />
-          ))}
-          {today.map((workout) => (
-            <WorkoutCard key={workout._id} workout={workout} />
-          ))}
-        </>
-      )}
-
-      <SessionSchedule />
-
+      <TodayCard date={date} />
+      <SessionList />
       <WorkoutHistory />
-
-      {recent && recent.length > 0 ? (
-        <Card className="space-y-3 p-5">
-          <CardHead label="Recent sessions" icon={Dumbbell} accent={ACCENT} />
-          <ul className="divide-y divide-line">
-            {recent.slice(0, 10).map((workout) => (
-              <li key={workout._id} className="flex items-center gap-3 py-2.5">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{workout.name}</span>
-                <span className="shrink-0 text-xs text-ink-faint">
-                  {workout.sets.length} sets
-                  {workout.durationMin ? ` · ${workout.durationMin} min` : ""} ·{" "}
-                  {formatDayShort(workout.date)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
     </div>
   );
 }

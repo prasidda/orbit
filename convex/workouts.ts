@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { Doc } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { requireUser, Ctx } from "./lib/auth";
 
 async function withSets(ctx: Ctx, workout: Doc<"workouts">) {
@@ -87,6 +87,8 @@ export const create = mutation({
     repeatDays: v.optional(v.array(v.number())),
     /** Force a row for `date` even if it isn't one of the repeat days. */
     startNow: v.optional(v.boolean()),
+    /** Carry the exercises over from the last time you did this session. */
+    copyLast: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const me = await requireUser(ctx);
@@ -131,10 +133,172 @@ export const create = mutation({
     const duplicate = alreadyToday.find((w) => w.name.toLowerCase() === name.toLowerCase());
     if (duplicate) return duplicate._id;
 
-    return await ctx.db.insert("workouts", {
+    const workoutId = await ctx.db.insert("workouts", {
       userId: me._id,
       date: args.date,
       name,
+    });
+
+    // A session you do every week is the same exercises with different
+    // numbers. Carrying last time's list over means starting leg day is one
+    // tap instead of retyping five exercises; the weights come across too, as
+    // a starting point to adjust rather than a blank field.
+    if (args.copyLast) {
+      const previous = await ctx.db
+        .query("workouts")
+        .withIndex("by_user_date", (q) => q.eq("userId", me._id).lt("date", args.date))
+        .order("desc")
+        .collect();
+      const source = previous.find((w) => w.name.toLowerCase() === name.toLowerCase());
+
+      if (source) {
+        const sets = await ctx.db
+          .query("workoutSets")
+          .withIndex("by_workout", (q) => q.eq("workoutId", source._id))
+          .collect();
+        for (const set of sets.sort((a, b) => a.order - b.order)) {
+          await ctx.db.insert("workoutSets", {
+            userId: me._id,
+            workoutId,
+            exercise: set.exercise,
+            kind: set.kind,
+            reps: set.reps,
+            weight: set.weight,
+            unit: set.unit,
+            durationSec: set.durationSec,
+            order: set.order,
+          });
+        }
+      }
+    }
+
+    return workoutId;
+  },
+});
+
+/** One session, with everything its own page needs. */
+export const get = query({
+  args: { workoutId: v.id("workouts") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const workout = await ctx.db.get(args.workoutId);
+    if (!workout || workout.userId !== me._id) return null;
+
+    const hydrated = await withSets(ctx, workout);
+
+    // The schedule belongs to the session *name*, not to this one day's row.
+    const rules = await ctx.db
+      .query("recurrences")
+      .withIndex("by_user", (q) => q.eq("userId", me._id))
+      .collect();
+    const rule = rules.find(
+      (r) => r.tool === "workouts" && r.title.toLowerCase() === workout.name.toLowerCase()
+    );
+
+    return {
+      ...hydrated,
+      schedule: rule ? { recurrenceId: rule._id, byDay: rule.byDay } : null,
+    };
+  },
+});
+
+/**
+ * Change which days this session repeats on, from the session itself.
+ *
+ * Editing the schedule where the session lives is the point — it used to be a
+ * separate list, which meant two places to look for one setting.
+ */
+export const setSchedule = mutation({
+  args: { workoutId: v.id("workouts"), byDay: v.array(v.number()) },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const workout = await ctx.db.get(args.workoutId);
+    if (!workout || workout.userId !== me._id) throw new Error("Not found");
+
+    const byDay = [...new Set(args.byDay.filter((d) => d >= 0 && d <= 6))].sort();
+
+    const rules = await ctx.db
+      .query("recurrences")
+      .withIndex("by_user", (q) => q.eq("userId", me._id))
+      .collect();
+    const rule = rules.find(
+      (r) => r.tool === "workouts" && r.title.toLowerCase() === workout.name.toLowerCase()
+    );
+
+    if (byDay.length === 0) {
+      // No days means it doesn't repeat — drop the rule rather than keep one
+      // that can never fire.
+      if (rule) await ctx.db.delete(rule._id);
+      return;
+    }
+
+    if (rule) await ctx.db.patch(rule._id, { byDay });
+    else
+      await ctx.db.insert("recurrences", {
+        userId: me._id,
+        tool: "workouts",
+        title: workout.name,
+        byDay,
+        startsOn: workout.date,
+      });
+  },
+});
+
+/**
+ * Every session you have: the ones that repeat, plus any you've logged
+ * recently. This is what the overview lists, so a session is reachable
+ * whether or not it happens to be scheduled today.
+ */
+export const sessionIndex = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireUser(ctx);
+
+    const rules = (
+      await ctx.db
+        .query("recurrences")
+        .withIndex("by_user", (q) => q.eq("userId", me._id))
+        .collect()
+    ).filter((r) => r.tool === "workouts");
+
+    const workouts = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_date", (q) => q.eq("userId", me._id))
+      .order("desc")
+      .take(200);
+
+    type Entry = {
+      name: string;
+      byDay: number[];
+      lastWorkoutId?: Id<"workouts">;
+      lastDate?: string;
+    };
+    const byName = new Map<string, Entry>();
+
+    for (const rule of rules) {
+      byName.set(rule.title.toLowerCase(), { name: rule.title, byDay: rule.byDay });
+    }
+
+    for (const workout of workouts) {
+      const key = workout.name.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, {
+          name: workout.name,
+          byDay: [],
+          lastWorkoutId: workout._id,
+          lastDate: workout.date,
+        });
+      } else if (!existing.lastWorkoutId || workout.date > (existing.lastDate ?? "")) {
+        existing.lastWorkoutId = workout._id;
+        existing.lastDate = workout.date;
+      }
+    }
+
+    return [...byName.values()].sort((a, b) => {
+      // Repeating sessions first, then most recently done.
+      if (a.byDay.length !== b.byDay.length) return b.byDay.length - a.byDay.length;
+      return (b.lastDate ?? "").localeCompare(a.lastDate ?? "");
     });
   },
 });
