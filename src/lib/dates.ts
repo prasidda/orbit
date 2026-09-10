@@ -65,3 +65,18 @@ export function greeting(now: Date = new Date()): string {
   if (h < 18) return "Afternoon";
   return "Evening";
 }
+
+/**
+ * Minutes from local midnight as a clock time: 170 -> "2:50am".
+ *
+ * Lives here rather than in a component so pure code (quick-add matchers,
+ * tests) can format a time without pulling in React.
+ */
+export function formatTimeOfDay(min?: number): string | null {
+  if (min === undefined) return null;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const suffix = h < 12 ? "am" : "pm";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")}${suffix}`;
+}

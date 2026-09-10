@@ -13,7 +13,7 @@ import {
   Repeat,
 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
-import { todayKey } from "@/lib/dates";
+import { todayKey, formatTimeOfDay as minutesToLabel } from "@/lib/dates";
 import { formatCups } from "@/lib/units";
 import { formatDuration } from "@/lib/duration";
 import { TOOL_BY_KEY } from "@/tools/registry";
@@ -21,15 +21,6 @@ import { Ring } from "@/tools/water/ring";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/states";
 import { cn } from "@/lib/utils";
-
-export function minutesToLabel(min?: number) {
-  if (min === undefined) return null;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  const suffix = h < 12 ? "am" : "pm";
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
-  return `${hour12}:${String(m).padStart(2, "0")}${suffix}`;
-}
 
 /** A titled block that only renders when it has something to say. */
 function Section({
